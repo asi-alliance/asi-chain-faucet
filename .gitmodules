@@ -1,4 +1,4 @@
-[submodule "server/rust-client"]
+[submodule "rust-client"]
 	path = server/rust-client
 	url = https://github.com/singnet/rust-client.git
 	branch = main
