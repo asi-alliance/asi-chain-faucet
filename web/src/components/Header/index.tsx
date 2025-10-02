@@ -1,4 +1,5 @@
 import UserManual from "@components/UserManual";
+import AsiLogoSrc from "@assets/images/asi_logo.svg";
 import { type ReactElement } from "react";
 import "./style.css";
 
@@ -7,8 +8,11 @@ const Header = (): ReactElement => {
         <header>
             <div className="content-container">
                 <div className="header-content">
+                    <div className="header-logo">
+                        <img src={AsiLogoSrc} alt="asi-logo" />
+                    </div>
                     <h2>
-                        MettaCycle Faucet
+                        ASI:Chain Faucet
                     </h2>
                     <UserManual />
                 </div>
@@ -16,5 +20,5 @@ const Header = (): ReactElement => {
         </header>
     );
 };
-
+     
 export default Header;
