@@ -8,5 +8,22 @@ header {
     min-height: 50px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+}
+
+.header-content h2 {
+    margin-right: auto;
+    user-select: none;
+}
+
+.header-logo {
+    height: 30px;
+    width: 40px;
+    margin-right: 10px;
+}
+
+.header-logo img {
+    height: 100%;
+    width: 100%;
+    display: block;
+    user-select: none;
 }

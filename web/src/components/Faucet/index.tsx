@@ -1,11 +1,16 @@
 import AddressBalance from "@components/AddressBalance";
 import LoaderWithLabel from "@components/LoaderWithLabel";
-import ValidationMessagesList from "@components/ValidationMessagesList";
-import { BALANCE_FAUCET_CEILING, FaucetCoins, FaucetPhases } from "@utils/constants";
 import { useFaucetTransactions } from "@context/FaucetTransactionsContext";
-import { TValidationMessage } from "@hooks/useAddressInput";
 import { faucetTokens, getBalance } from "@api/index";
 import { convertCogsToBalance } from "@utils/methods";
+import ValidationMessagesList, {
+    TValidationMessage,
+} from "@components/ValidationMessagesList";
+import {
+    BALANCE_FAUCET_CEILING,
+    FaucetCoins,
+    FaucetPhases,
+} from "@utils/constants";
 import {
     type ReactElement,
     useCallback,
@@ -28,7 +33,8 @@ const Faucet = ({ address }: IFaucetProps): ReactElement => {
         FaucetPhases.ELIGIBILITY_TEST
     );
 
-    const { setLastTransactionHash } = useFaucetTransactions();
+    const { isFlowCompleted, setIsFlowCompleted, setLastTransactionHash } =
+        useFaucetTransactions();
 
     const requestIdRef = useRef(0);
 
@@ -38,11 +44,13 @@ const Faucet = ({ address }: IFaucetProps): ReactElement => {
         if (!address) {
             setAddressBalance(null);
             setFaucetPhase(FaucetPhases.ELIGIBILITY_TEST);
+            setIsFlowCompleted(false);
             return;
         }
 
         try {
             setIsAddressBalanceFetching(true);
+            setIsFlowCompleted(false);
 
             const balance = await getBalance(address);
 
@@ -86,13 +94,13 @@ const Faucet = ({ address }: IFaucetProps): ReactElement => {
                 setIsAddressBalanceFetching(false);
             }
         }
-    }, [address]);
+    }, [address, setIsFlowCompleted]);
 
     useEffect(() => {
         setErrorsList([]);
         setFaucetPhase(FaucetPhases.ELIGIBILITY_TEST);
         updateAddressBalance();
-    }, [address, updateAddressBalance]);
+    }, [address, updateAddressBalance, isFlowCompleted]);
 
     const faucet = async (): Promise<void> => {
         try {
@@ -144,7 +152,7 @@ const Faucet = ({ address }: IFaucetProps): ReactElement => {
                         <div className="address-balance-block">
                             <AddressBalance
                                 value={addressBalance}
-                                coin={FaucetCoins.REV}
+                                coin={FaucetCoins.ASI}
                             />
                         </div>
 

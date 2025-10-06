@@ -20,6 +20,7 @@
         "baseUrl": ".",
         "paths": {
             "@api/*": ["src/api/*"],
+            "@assets/*": ["src/assets/*"],
             "@pages/*": ["src/pages/*"],
             "@layouts/*": ["src/layouts/*"],
             "@components/*": ["src/components/*"],
@@ -27,6 +28,7 @@
             "@domains/*": ["src/domains/*"],
             "@hooks/*": ["src/hooks/*"],
             "@router/*": ["src/router/*"],
+            "@sections/*": ["src/sections/*"],
             "@services/*": ["src/services/*"],
             "@utils/*": ["src/utils/*"],
             "@data/*": ["src/data/*"],
