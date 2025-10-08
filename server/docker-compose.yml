@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  asi-chain-faucet-server:
+    build: .
+    image: asi-chain-faucet-server:latest
+    env_file:
+      - .env
+    ports:
+      - "${SERVER_PORT}:${SERVER_PORT}"
+    restart: unless-stopped
