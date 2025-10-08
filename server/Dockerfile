@@ -10,7 +10,8 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
-    
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 RUN git clone https://github.com/F1R3FLY-io/rust-client.git && \
     cd rust-client && \
