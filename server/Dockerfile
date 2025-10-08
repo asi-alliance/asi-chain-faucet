@@ -1,4 +1,4 @@
-FROM rust:1.77
+FROM python:3.11-slim as builder
 WORKDIR /usr/src/app
 COPY . .
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
