@@ -37,7 +37,7 @@ jobs:
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
       run: |
-        docker build -t $ECR_REGISTRY/${{ env.ECR_REPOSITORY_FAUCET_SERVER }}:$IMAGE_TAG -f server/Dockerfile.rust server/
+        docker build -t $ECR_REGISTRY/${{ env.ECR_REPOSITORY_FAUCET_SERVER }}:$IMAGE_TAG -f server/Dockerfile server/
         docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY_FAUCET_SERVER }}:$IMAGE_TAG
         echo "image=$ECR_REGISTRY/${{ env.ECR_REPOSITORY_FAUCET_SERVER }}:$IMAGE_TAG" >> $GITHUB_OUTPUT
     
