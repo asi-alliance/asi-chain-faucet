@@ -32,7 +32,7 @@ jobs:
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
-    - name: Build, tag, and push indexer image
+    - name: Build, tag, and push Faucet server image
       id: build-faucet-server
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -53,7 +53,7 @@ jobs:
           --query "Command.CommandId" \
           --output text \
           --parameters "commands=[
-            \"cd /home/ubuntu/indexer && \
+            \"cd /home/ubuntu/faucet-server && \
             export ECR_REGISTRY=${{ steps.login-ecr.outputs.registry }} && \
             export IMAGE_TAG=${{ github.sha }} && \
             aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin \$ECR_REGISTRY && \
