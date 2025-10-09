@@ -59,7 +59,7 @@ jobs:
             aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin \$ECR_REGISTRY && \
             docker compose -f docker-compose.deploy.yml pull --quiet && \
             docker compose -f docker-compose.deploy.yml up -d \
-            docker image prune -a -f \"
+            docker image prune -f \"
           ]")
         if [ -z "$COMMAND_ID" ]; then
           echo "::error::Failed to send command to SSM."
