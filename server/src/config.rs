@@ -11,9 +11,9 @@ pub struct AppConfig {
 
     pub node_sockets: Vec<NodeSocket>,
 
-    pub observer_host: String,
-    pub observer_grpc_port: u16,
-    pub observer_http_port: u16,
+    pub reader_validator_host: String,
+    pub reader_validator_grpc_port: u16,
+    pub reader_validator_http_port: u16,
 
     pub server_host: String,
     pub server_port: u16,
@@ -33,9 +33,9 @@ impl AppConfig {
 
             node_sockets: Self::load_node_sockets().unwrap_or_default(),
 
-            observer_host: env::var("OBSERVER_HOST").unwrap_or_else(|_| "localhost".to_string()),
-            observer_grpc_port: Self::parse_env_or("OBSERVER_GRPC_PORT", 40452),
-            observer_http_port: Self::parse_env_or("OBSERVER_HTTP_PORT", 40453),
+            reader_validator_host: env::var("READER_VALIDATOR_HOST").unwrap_or_else(|_| "localhost".to_string()),
+            reader_validator_grpc_port: Self::parse_env_or("READER_VALIDATOR_GRPC_PORT", 40452),
+            reader_validator_http_port: Self::parse_env_or("READER_VALIDATOR_HTTP_PORT", 40453),
 
             server_host: env::var("SERVER_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
             server_port: Self::parse_env_or("SERVER_PORT", 8000),
