@@ -41,9 +41,9 @@ All responses are JSON. CORS is enabled.
 
 - GET `/deploy/:deploy_id`
   - Validates deploy id
-  - Returns deploy info from genesis validator node (status, msg, block_hash)
+  - Returns deploy info (status, msg, block_hash)
 
 ## Notes
 
 - Amount sent per transfer is configured by `FAUCET_AMOUNT` in `.env`
-- The service talks to a node and an genesis validator (for only-read endpoints)
+- For read-only endpoints, the service communicates with the observer node, or with the validator node if `dev-mode` is enabled
