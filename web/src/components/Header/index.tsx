@@ -1,5 +1,5 @@
 import UserManual from "@components/UserManual";
-import AsiLogoSrc from "@assets/images/asi_logo.svg";
+import Logo from "@components/Logo";
 import { type ReactElement } from "react";
 import "./style.css";
 
@@ -8,11 +8,9 @@ const Header = (): ReactElement => {
         <header>
             <div className="content-container">
                 <div className="header-content">
-                    <div className="header-logo">
-                        <img src={AsiLogoSrc} alt="asi-logo" />
-                    </div>
+                    <Logo size="medium" showText={true} />
                     <h2>
-                        ASI:Chain Faucet
+                        Faucet
                     </h2>
                     <UserManual />
                 </div>
