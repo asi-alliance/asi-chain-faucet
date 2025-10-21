@@ -33,8 +33,8 @@ impl NodeCliService {
             propose: false,
             max_wait: 60,
             check_interval: 5,
-            reader_validator_host: Some(self.config.reader_validator_host.clone()),
-            reader_validator_port: Some(self.config.reader_validator_grpc_port),
+            readonly_host: Some(self.config.readonly_host.clone()),
+            readonly_port: Some(self.config.readonly_grpc_port),
         };
 
         let deploy_id = transfer_deploy(args)
@@ -47,8 +47,8 @@ impl NodeCliService {
     pub async fn get_balance(&self, address: &str) -> Result<String> {
         let args = WalletBalanceArgs {
             address: address.to_owned(),
-            host: self.config.reader_validator_host.clone(),
-            port: self.config.reader_validator_grpc_port,
+            host: self.config.readonly_host.clone(),
+            port: self.config.readonly_grpc_port,
         };
 
         let (balance, _meta) = wallet_balance_command(&args)
@@ -62,18 +62,18 @@ impl NodeCliService {
         let max_wait = self.config.deploy_max_wait_sec;
         let check_interval = self.config.deploy_check_interval_sec;
         let max_attempts = max_wait / check_interval;
-        let reader_validator_host = self.config.reader_validator_host.clone();
+        let readonly_host = self.config.readonly_host.clone();
 
         let args = WaitArgs {
             private_key: self.config.private_key.clone().unwrap(),
             max_attempts,
             check_interval: check_interval as u64,
             http_args: HttpArgs {
-                host: reader_validator_host.clone(),
-                port: self.config.reader_validator_http_port,
+                host: readonly_host.clone(),
+                port: self.config.readonly_http_port,
             },
-            reader_validator_host: reader_validator_host,
-            reader_validator_grpc_port: self.config.reader_validator_grpc_port,
+            readonly_host: readonly_host,
+            readonly_grpc_port: self.config.readonly_grpc_port,
         };
 
         let deploy_info = check_deploy_status(id.clone(), &args)
