@@ -1,0 +1,18 @@
+.logo-container {
+    display: flex;
+    align-items: center;
+    user-select: none;
+    gap: 8px;
+    margin-right: auto;
+}
+
+.logo-container svg {
+    flex-shrink: 0;
+}
+
+.logo-text {
+    color: white;
+    font-family: 'Roboto Mono', monospace;
+    font-size: 18px;
+    font-weight: 700;
+}
