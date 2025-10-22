@@ -1,5 +1,5 @@
-import UserManual from "@components/UserManual";
 import Logo from "@components/Logo";
+import UserManual from "@components/UserManual";
 import { type ReactElement } from "react";
 import "./style.css";
 
@@ -8,10 +8,7 @@ const Header = (): ReactElement => {
         <header>
             <div className="content-container">
                 <div className="header-content">
-                    <Logo size="medium" showText={true} />
-                    <h2>
-                        Faucet
-                    </h2>
+                    <Logo />
                     <UserManual />
                 </div>
             </div>
