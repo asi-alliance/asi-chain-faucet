@@ -25,7 +25,7 @@ const Logo = (): ReactElement => {
                     fill="currentColor"
                 />
             </svg>
-            <span className="logo-text">ASI:Faucet</span>
+            <span className="logo-text">ASI:Chain Faucet</span>
         </div>
     );
 };
