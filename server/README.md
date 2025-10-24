@@ -48,6 +48,7 @@ For complete project documentation, see the [main README](../README.md) in the r
    cp .env.example .env
    # Edit .env with your node configurations and private key
    # See Configuration Reference section below for details
+   # Example: nano .env
    ```
 
 3. **Run the server:**
@@ -72,27 +73,29 @@ src/
 ├── config.rs            # Environment configuration management
 ├── utils.rs             # Utility functions (node selection, etc.)
 │
-├── core/               # Application core layer
-│   ├── mod.rs          # Module exports
-│   └── app.rs          # Application state and runtime
+├── core/                # Application core layer
+│   ├── mod.rs           # Module exports
+│   └── app.rs           # Application state and runtime
 │
-├── api/                # HTTP API layer
-│   ├── mod.rs          # API module exports
-│   ├── router.rs       # Route definitions and middleware
-│   ├── models.rs       # Request/response models
-│   ├── handlers/       # Request handlers
+├── api/                 # HTTP API layer
+│   ├── mod.rs           # API module exports
+│   ├── router.rs        # Route definitions and middleware
+│   ├── models.rs        # Request/response models
+│   ├── handlers/        # Request handlers
 │   │   ├── mod.rs
-│   │   ├── transfer.rs   # Token transfer endpoint
-│   │   ├── balance.rs    # Balance query endpoint
-│   │   └── deploy.rs     # Deploy status endpoint
-│   └── middleware/     # Custom middleware
+│   │   ├── transfer.rs  # Token transfer endpoint
+│   │   ├── balance.rs   # Balance query endpoint
+│   │   └── deploy.rs    # Deploy status endpoint
+│   └── middleware/      # Custom middleware
 │       ├── mod.rs
 │       └── request_id.rs # Request ID tracking
 │
-└── services/           # Business logic layer
+└── services/            # Business logic layer
     ├── mod.rs
-    └── node_cli.rs     # Blockchain interaction service
+    └── node_cli.rs      # Blockchain interaction service
 ```
+
+See also: [src/main.rs](src/main.rs), [src/config.rs](src/config.rs), [src/api/router.rs](src/api/router.rs)
 
 ### Request Processing Flow
 
@@ -396,6 +399,8 @@ docker-compose down
 
 ### Docker Compose Configuration
 
+See [docker-compose.yml](docker-compose.yml) for the complete configuration:
+
 ```yaml
 version: '3.8'
 
@@ -411,6 +416,8 @@ services:
 ```
 
 ### Dockerfile
+
+See [Dockerfile](Dockerfile) for the container configuration:
 
 ```dockerfile
 FROM rust:slim
@@ -468,6 +475,8 @@ The project includes `proptest` for property-based testing:
 [dev-dependencies]
 proptest = "1.6"
 ```
+
+See [Cargo.toml](Cargo.toml) for complete dependencies list.
 
 ### Code Quality
 

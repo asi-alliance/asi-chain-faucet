@@ -140,13 +140,13 @@ asi-chain-faucet/
 
 ### Key Directories
 
-**server/src/api** - Contains all HTTP API endpoints, request/response models, and middleware for processing incoming requests. The router module defines the API structure with CORS, compression, and timeout layers.
+**[server/src/api](server/src/api)** - Contains all HTTP API endpoints, request/response models, and middleware for processing incoming requests. The router module defines the API structure with CORS, compression, and timeout layers.
 
-**server/src/services** - Business logic layer that interfaces with the ASI blockchain through the node CLI. Handles token transfers, balance queries, and transaction status checks.
+**[server/src/services](server/src/services)** - Business logic layer that interfaces with the ASI blockchain through the node CLI. Handles token transfers, balance queries, and transaction status checks.
 
-**web/src/components** - Reusable React components including the main faucet form, balance display, transaction status checker, and various UI elements styled with custom CSS.
+**[web/src/components](web/src/components)** - Reusable React components including the main faucet form, balance display, transaction status checker, and various UI elements styled with custom CSS.
 
-**web/src/hooks** - Custom React hooks for managing address input, debouncing user input, and implementing validation logic with real-time feedback.
+**[web/src/hooks](web/src/hooks)** - Custom React hooks for managing address input, debouncing user input, and implementing validation logic with real-time feedback.
 
 For detailed backend server documentation, see [server/README.md](server/README.md).
 
@@ -225,6 +225,8 @@ For detailed backend server documentation, see [server/README.md](server/README.
 - **Serde 1.0** - Serialization/deserialization framework
 - **Tracing 0.1** - Structured logging and diagnostics
 
+See [server/Cargo.toml](server/Cargo.toml) for complete backend dependencies.
+
 **Frontend Technologies**
 - **React 19.1** - UI framework for building interactive interfaces
 - **TypeScript 5.7** - Type-safe JavaScript for better development experience
@@ -232,6 +234,8 @@ For detailed backend server documentation, see [server/README.md](server/README.
 - **React Router 7.4** - Client-side routing
 - **Redux Toolkit 2.6** - State management
 - **Custom CSS** - Component-scoped styling
+
+See [web/package.json](web/package.json) for complete frontend dependencies.
 
 **Infrastructure**
 - **Docker** - Containerization for consistent deployment
@@ -299,7 +303,7 @@ Before installing the ASI Chain Faucet, ensure you have the following installed:
 - **npm 9.x or higher** - Comes with Node.js
 
 **Optional (for Docker deployment)**
-- **Docker 24.x or higher**
+- **Docker 24.x or higher** - Install from [docker.com](https://www.docker.com/)
 - **Docker Compose 2.x or higher**
 
 ### Quick Start
@@ -352,7 +356,7 @@ npm install
 
 3. Configure environment variables:
 
-Create `.env` file in the `web` directory:
+Create [`.env`](web/.env) file in the `web` directory:
 
 ```bash
 VITE_BASE_URL=http://localhost:40470
@@ -379,6 +383,8 @@ cd server
 docker-compose up -d
 ```
 
+See [server/docker-compose.yml](server/docker-compose.yml) and [server/Dockerfile](server/Dockerfile) for configuration.
+
 **Frontend:**
 
 ```bash
@@ -386,6 +392,8 @@ cd ..
 docker build -t asi-chain-faucet-web:latest .
 docker run -p 80:80 asi-chain-faucet-web:latest
 ```
+
+See [Dockerfile](Dockerfile) for frontend container configuration.
 
 ---
 
@@ -729,7 +737,7 @@ cd server
 cargo build --release
 ```
 
-The optimized binary will be in `target/release/asi-faucet`.
+The optimized binary will be in [`target/release/asi-faucet`](server/target/release/).
 
 **Frontend:**
 
@@ -738,7 +746,7 @@ cd web
 npm run build
 ```
 
-The production build will be in `dist/` directory.
+The production build will be in [`dist/`](web/dist/) directory.
 
 ### Code Structure Best Practices
 
