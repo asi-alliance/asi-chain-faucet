@@ -1,0 +1,447 @@
+# API Reference
+
+Complete API documentation for ASI Chain Faucet backend server.
+
+---
+
+## Base URL
+
+```
+http://localhost:40470
+```
+
+For production deployments, replace with your actual server URL.
+
+---
+
+## Common Response Format
+
+### Success Response
+
+All successful responses return JSON with appropriate status code and data.
+
+### Error Response
+
+All errors follow a consistent format:
+
+```json
+{
+  "error": "Brief error description",
+  "details": "Additional error context (optional)",
+  "timestamp": "2025-10-24T12:34:56.789Z"
+}
+```
+
+---
+
+## Endpoints
+
+### POST /transfer
+
+Transfers test ASI tokens to a specified address after validating the recipient's balance.
+
+**Request:**
+
+```http
+POST /transfer HTTP/1.1
+Content-Type: application/json
+
+{
+  "to_address": "11114GuXVLzHJqUqDUJGLJJsn8c1234567890abcdefghijklmnopqrst"
+}
+```
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| to_address | string | Yes | Valid ASI address (must start with "1111", 50-54 characters, alphanumeric) |
+
+**Success Response (200 OK):**
+
+```json
+{
+  "deploy_id": "d1f2e3b4a5c6789012345678901234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12"
+}
+```
+
+**Response Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| deploy_id | string | Unique identifier for the transfer transaction (100-160 characters) |
+
+**Error Responses:**
+
+Invalid address format (400 Bad Request):
+```json
+{
+  "error": "Validation Error",
+  "details": "Address must start with 1111",
+  "timestamp": "2025-10-24T12:34:56.789Z"
+}
+```
+
+Balance exceeds limit (400 Bad Request):
+```json
+{
+  "error": "Address balance exceeds faucet eligibility threshold",
+  "details": null,
+  "timestamp": "2025-10-24T12:34:56.789Z"
+}
+```
+
+Transfer failed (400 Bad Request):
+```json
+{
+  "error": "FAUCET: Transfer failed",
+  "details": "Insufficient funds in faucet wallet",
+  "timestamp": "2025-10-24T12:34:56.789Z"
+}
+```
+
+**Validation Rules:**
+
+1. **Address Format:**
+   - Must start with "1111"
+   - Length between 50-54 characters
+   - Only alphanumeric characters allowed
+
+2. **Balance Check:**
+   - Recipient balance must be below `FAUCET_MAX_BALANCE` (default: 20,000 ASI)
+   - Balance checked before transfer is initiated
+
+3. **Amount:**
+   - Transfer amount is configured via `FAUCET_AMOUNT` environment variable
+   - Default: 10,000 units (smallest unit)
+
+**Processing Flow:**
+
+1. Validate address format
+2. Query recipient balance from read-only observer node
+3. Check balance against faucet limit
+4. Select random validator node for load balancing
+5. Initiate transfer using private key via node CLI
+6. Return deploy ID to client
+
+**Response Time:**
+- Typical: 1-3 seconds
+- Maximum: 7 seconds (enforced by timeout middleware)
+
+**Status Codes:**
+- `200 OK` - Transfer successfully initiated
+- `400 Bad Request` - Invalid address or balance exceeds limit
+- `500 Internal Server Error` - Server error during transfer
+
+---
+
+### GET /balance/:address
+
+Retrieves the current balance of a ASI address from the read-only observer node.
+
+**Request:**
+
+```http
+GET /balance/11114GuXVLzHJqUqDUJGLJJsn8c1234567890abcdefghijklmnopqrst HTTP/1.1
+```
+
+**Path Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| address | string | Yes | Valid ASI address to query |
+
+**Success Response (200 OK):**
+
+```json
+{
+  "balance": "1500000000000"
+}
+```
+
+**Response Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| balance | string | Balance in smallest unit (1 ASI = 10^8 or 10^9 units depending on `VITE_TOKEN_DECIMALS`) |
+
+**Error Responses:**
+
+Invalid address format (400 Bad Request):
+```json
+{
+  "error": "Invalid address format",
+  "details": "Address must start with 1111",
+  "timestamp": "2025-10-24T12:34:56.789Z"
+}
+```
+
+Query failed (500 Internal Server Error):
+```json
+{
+  "error": "Internal Server Error",
+  "details": "Failed to query balance from blockchain",
+  "timestamp": "2025-10-24T12:34:56.789Z"
+}
+```
+
+**Implementation Details:**
+- Uses `wallet_balance_command` from node_cli
+- Connects to read-only observer node via gRPC (port 40452)
+- Returns raw balance string without conversion
+- Balance conversion to human-readable format is done on frontend
+
+**Response Time:**
+- Typical: 100-200ms
+- Maximum: 7 seconds (enforced by timeout middleware)
+
+**Status Codes:**
+- `200 OK` - Balance retrieved successfully
+- `400 Bad Request` - Invalid address format
+- `500 Internal Server Error` - Error querying blockchain
+
+---
+
+### GET /deploy/:deploy_id
+
+Retrieves the status and information about a deploy transaction.
+
+**Request:**
+
+```http
+GET /deploy/d1f2e3b4a5c6789012345678901234567890abcdef1234567890abcdef12 HTTP/1.1
+```
+
+**Path Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| deploy_id | string | Yes | Deploy ID from /transfer endpoint (100-160 alphanumeric characters) |
+
+**Success Response (200 OK):**
+
+**Status: Finalized**
+```json
+{
+  "status": "Finalized",
+  "msg": "Transfer completed successfully",
+  "block_hash": "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef12"
+}
+```
+
+**Status: Deploying**
+```json
+{
+  "status": "Deploying"
+}
+```
+
+**Status: Finalizing**
+```json
+{
+  "status": "Finalizing"
+}
+```
+
+**Status: DeployError**
+```json
+{
+  "status": "DeployError",
+  "msg": "Insufficient funds"
+}
+```
+
+**Status: FinalizationError**
+```json
+{
+  "status": "FinalizationError",
+  "msg": "Block finalization failed"
+}
+```
+
+**Status: Unknown**
+```json
+{
+  "status": "Unknown"
+}
+```
+
+**Response Fields:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-----------|
+| status | string | Yes | Deploy status (see below) |
+| msg | string | No | Human-readable status message |
+| block_hash | string | No | Block hash if deploy is included in a block |
+
+**Deploy Status Values:**
+
+| Status | Description |
+|--------|-------------|
+| Deploying | Transaction submitted, waiting for inclusion in block |
+| Finalizing | Transaction included in block, waiting for finalization |
+| Finalized | Transaction successfully finalized in block |
+| DeployError | Error during transaction deployment |
+| FinalizationError | Error during block finalization |
+| Unknown | Deploy ID not found or status cannot be determined |
+
+**Error Responses:**
+
+Invalid deploy ID format (400 Bad Request):
+```json
+{
+  "error": "Validation Error",
+  "details": "FAUCET: Invalid deploy ID format (must be 100-160 alphanumeric chars)",
+  "timestamp": "2025-10-24T12:34:56.789Z"
+}
+```
+
+Query failed (500 Internal Server Error):
+```json
+{
+  "error": "Internal Server Error",
+  "details": "FAUCET: Failed to retrieve deploy info",
+  "timestamp": "2025-10-24T12:34:56.789Z"
+}
+```
+
+**Implementation Details:**
+- Uses `check_deploy_status` from node_cli
+- Connects to read-only observer node via HTTP (port 40453)
+- Retries based on `DEPLOY_MAX_WAIT_SEC` and `DEPLOY_CHECK_INTERVAL_SEC`
+- Maximum wait time: 6 seconds (configurable)
+- Check interval: 2 seconds (configurable)
+
+**Response Time:**
+- Typical: 200-500ms
+- Maximum: 7 seconds (enforced by timeout middleware)
+
+**Status Codes:**
+- `200 OK` - Deploy status retrieved successfully (even if status is error)
+- `400 Bad Request` - Invalid deploy ID format
+- `500 Internal Server Error` - Error querying blockchain
+
+---
+
+## CORS Configuration
+
+The API accepts requests from any origin with the following configuration:
+
+**Allowed Origins:** `*` (any origin)
+
+**Allowed Methods:**
+- GET
+- POST
+- OPTIONS
+
+**Allowed Headers:**
+- Content-Type
+- Authorization
+
+**Max Age:** 3600 seconds
+
+For production deployments, it's recommended to restrict allowed origins to your frontend domain.
+
+---
+
+## Rate Limiting
+
+Currently, no rate limiting is implemented at the API layer. Rate limiting should be configured at the infrastructure level for production deployments:
+
+- Reverse proxy (nginx, Caddy)
+- API gateway
+- Load balancer
+
+Recommended limits:
+- General requests: 100 requests/minute per IP
+- Transfer requests: 10 requests/hour per IP
+- Balance queries: 60 requests/minute per IP
+
+---
+
+## Request/Response Examples
+
+### Complete Transfer Flow
+
+**1. Check current balance:**
+```bash
+curl http://localhost:40470/balance/11114GuXVLzHJqUqDUJGLJJsn8c1234567890abcdefghijklmnopqrst
+```
+
+**2. Request tokens:**
+```bash
+curl -X POST http://localhost:40470/transfer \
+  -H "Content-Type: application/json" \
+  -d '{"to_address":"11114GuXVLzHJqUqDUJGLJJsn8c1234567890abcdefghijklmnopqrst"}'
+```
+
+**3. Check deploy status:**
+```bash
+curl http://localhost:40470/deploy/d1f2e3b4a5c6789012345678901234567890abcdef12
+```
+
+### Error Handling Example
+
+```javascript
+async function requestTokens(address) {
+  try {
+    const response = await fetch('http://localhost:40470/transfer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to_address: address })
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      console.error(`Error: ${data.error}`);
+      if (data.details) {
+        console.error(`Details: ${data.details}`);
+      }
+      return null;
+    }
+    
+    return data.deploy_id;
+  } catch (error) {
+    console.error('Network error:', error);
+    return null;
+  }
+}
+```
+
+---
+
+## HTTP Headers
+
+### Request Headers
+
+**Required for POST:**
+- `Content-Type: application/json`
+
+**Optional:**
+- `Accept: application/json`
+
+### Response Headers
+
+All responses include:
+- `Content-Type: application/json`
+- `X-Request-ID: <uuid>` - Unique request identifier for tracing
+
+Compressed responses (when supported):
+- `Content-Encoding: gzip` or `Content-Encoding: br`
+
+---
+
+## Error Codes Summary
+
+| HTTP Status | Error Type | Description |
+|-------------|------------|-------------|
+| 400 | Validation Error | Invalid input format or business rule violation |
+| 408 | Request Timeout | Request exceeded 7 second timeout |
+| 413 | Payload Too Large | Request body exceeds 1MB limit |
+| 500 | Internal Server Error | Server-side error during processing |
+
+---
+
+For configuration details, see [CONFIGURATION.md](CONFIGURATION.md).  
+For development information, see [DEVELOPMENT.md](DEVELOPMENT.md).
