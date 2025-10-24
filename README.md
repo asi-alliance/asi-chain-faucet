@@ -94,7 +94,7 @@ npm install
 
 # Configure environment
 # Create .env file with:
-# VITE_BASE_URL=http://localhost:40470
+# VITE_BASE_URL=http://localhost:40470  # Or http://localhost:3001 (default if not set)
 # VITE_FAUCET_BALANCE_LIMIT=20000
 # VITE_TOKEN_DECIMALS=9
 

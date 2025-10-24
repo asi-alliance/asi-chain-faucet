@@ -120,7 +120,11 @@ Transfer failed (400 Bad Request):
 1. Validate address format
 2. Query recipient balance from read-only observer node
 3. Check balance against faucet limit
-4. Select random validator node for load balancing
+4. Select random validator node with availability check:
+   - Nodes are shuffled randomly
+   - Each node is checked for availability via HTTP `/status` endpoint with 2 second timeout
+   - First available node is selected
+   - Request fails if no nodes are reachable
 5. Initiate transfer using private key via node CLI
 6. Return deploy ID to client
 
@@ -176,10 +180,10 @@ Invalid address format (400 Bad Request):
 }
 ```
 
-Query failed (500 Internal Server Error):
+Query failed (400 Bad Request):
 ```json
 {
-  "error": "Internal Server Error",
+  "error": "FAUCET: Balance retrieval failed",
   "details": "Failed to query balance from blockchain",
   "timestamp": "2025-10-24T12:34:56.789Z"
 }
@@ -197,8 +201,7 @@ Query failed (500 Internal Server Error):
 
 **Status Codes:**
 - `200 OK` - Balance retrieved successfully
-- `400 Bad Request` - Invalid address format
-- `500 Internal Server Error` - Error querying blockchain
+- `400 Bad Request` - Invalid address format or error querying blockchain
 
 ---
 

@@ -253,7 +253,9 @@ SERVER_PORT=40470
 
 **Format:** Integer (1-65535)
 
-**Default:** 40470
+**Default:** 8000
+
+**Note:** The `.env.example` file uses 40470, but if this variable is not set, the server defaults to port 8000.
 
 **Recommendation:** Use ports above 1024 to avoid requiring root privileges
 
