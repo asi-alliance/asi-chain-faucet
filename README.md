@@ -121,7 +121,10 @@ asi-chain-faucet/
 │   ├── Cargo.toml             # Rust dependencies
 │   ├── Dockerfile             # Backend container image
 │   ├── docker-compose.yml     # Backend deployment
-│   └── README.md              # Backend documentation
+│   ├── README.md              # Backend overview
+│   ├── API.md                 # API reference
+│   ├── CONFIGURATION.md       # Configuration guide
+│   └── DEVELOPMENT.md         # Development guide
 │
 └── web/                        # React frontend application
     ├── src/
@@ -133,8 +136,6 @@ asi-chain-faucet/
     ├── package.json           # Node.js dependencies
     └── vite.config.ts         # Build configuration
 ```
-
-For detailed backend structure and development guide, see [server/README.md](server/README.md).
 
 ---
 
@@ -223,11 +224,35 @@ See [server/Cargo.toml](server/Cargo.toml) and [web/package.json](web/package.js
 
 ## Documentation
 
-For detailed information about specific aspects of the project:
+### Backend Documentation
 
-- **[Backend Documentation](server/README.md)** - Server architecture, API endpoints, configuration, deployment, troubleshooting
-- **[Main Repository](https://github.com/asi-alliance/asi-chain-faucet)** - Source code and issue tracking
-- **[ASI Alliance Docs](https://docs.asichain.io)** - General ASI blockchain documentation
+**[server/README.md](server/README.md)** - Backend overview, quick start, architecture, and navigation
+
+**[server/API.md](server/API.md)** - Complete API reference
+- All endpoints (POST /transfer, GET /balance, GET /deploy)
+- Request/response formats
+- Error codes and handling
+- CORS configuration
+- Usage examples with curl
+
+**[server/CONFIGURATION.md](server/CONFIGURATION.md)** - Configuration guide
+- All environment variables explained
+- Required vs optional settings
+- Validation rules
+- Security best practices
+- Docker and Kubernetes configuration
+
+**[server/DEVELOPMENT.md](server/DEVELOPMENT.md)** - Development guide
+- Development environment setup
+- Running and debugging
+- Code structure and patterns
+- Building and testing
+- Troubleshooting common issues
+
+### Additional Resources
+
+- **[ASI Alliance Documentation](https://docs.asichain.io)** - General ASI blockchain documentation
+- **[GitHub Repository](https://github.com/asi-alliance/asi-chain-faucet)** - Source code and issue tracking
 
 ---
 
