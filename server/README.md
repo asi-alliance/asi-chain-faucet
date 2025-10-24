@@ -1,6 +1,6 @@
 # ASI Faucet Backend Server
 
-Rust-based REST API service for distributing test REV tokens on ASI blockchain. Built with Axum framework and integrated with ASI blockchain nodes through forked F1r3fly node CLI.
+Rust-based REST API service for distributing test ASI tokens on ASI blockchain. Built with Axum framework and integrated with ASI blockchain nodes through forked F1r3fly node CLI.
 
 For complete project documentation, see the [main README](../README.md) in the root directory.
 
@@ -139,7 +139,7 @@ Validates recipient address and balance, then initiates token transfer to blockc
 **Request Validation:**
 1. Address format check (must start with "1111", 50-54 chars, alphanumeric)
 2. Balance query to read-only observer node
-3. Balance limit enforcement (default: 20,000 REV)
+3. Balance limit enforcement (default: 20,000 ASI)
 
 **Transfer Process:**
 1. Random validator node selection
@@ -168,7 +168,7 @@ Queries current balance from read-only observer node.
 }
 ```
 
-Balance is in smallest unit where 1 REV = 10^8 or 10^9 units (configurable via `VITE_TOKEN_DECIMALS`).
+Balance is in smallest unit where 1 ASI = 10^8 or 10^9 units (configurable via `VITE_TOKEN_DECIMALS`).
 
 ---
 
@@ -209,7 +209,7 @@ All configuration is loaded from environment variables defined in `.env` file.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | FAUCET_AMOUNT | 10000 | Amount to send per transfer (in smallest unit) |
-| FAUCET_MAX_BALANCE | 20000 | Maximum balance for eligibility (in REV) |
+| FAUCET_MAX_BALANCE | 20000 | Maximum balance for eligibility (in ASI) |
 | READONLY_GRPC_PORT | 40452 | Observer node gRPC port |
 | READONLY_HTTP_PORT | 40453 | Observer node HTTP port |
 | SERVER_HOST | 0.0.0.0 | Server bind address |

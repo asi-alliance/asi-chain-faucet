@@ -7,7 +7,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-1A1A1A?style=for-the-badge)](LICENSE)
 [![Docs](https://img.shields.io/badge/Docs-Available-C4F0C1?style=for-the-badge)](https://docs.asichain.io)
 
-<h3>A web-based faucet service for distributing test REV tokens on the ASI blockchain testnet</h3>
+<h3>A web-based faucet service for distributing test ASI tokens on the ASI blockchain testnet</h3>
 
 Part of the [**Artificial Superintelligence Alliance**](https://superintelligence.io) ecosystem
 
@@ -17,7 +17,7 @@ Part of the [**Artificial Superintelligence Alliance**](https://superintelligenc
 
 ---
 
-ASI Chain Faucet is a production-ready service that enables developers and users to receive test REV tokens for ASI blockchain testnet. The service provides a user-friendly web interface for requesting tokens and tracking transaction status, with built-in balance validation to ensure fair distribution.
+ASI Chain Faucet is a production-ready service that enables developers and users to receive test ASI tokens for ASI blockchain testnet. The service provides a user-friendly web interface for requesting tokens and tracking transaction status, with built-in balance validation to ensure fair distribution.
 
 ---
 
@@ -57,14 +57,14 @@ The ASI Chain Faucet consists of two main components working together to provide
 
 **Backend Server** - A Rust-based REST API service built with Axum that handles token transfers, balance checks, and transaction status queries. The server integrates with ASI blockchain nodes through a forked F1r3fly node CLI, providing reliable interaction with the blockchain network.
 
-**Frontend Application** - A React-based web interface that allows users to request tokens by entering their REV address, check their current balance, and track the status of their token transfer transactions in real-time.
+**Frontend Application** - A React-based web interface that allows users to request tokens by entering their ASI address, check their current balance, and track the status of their token transfer transactions in real-time.
 
 ### Key Features
 
-- **Token Distribution**: Send a configured amount of test REV tokens to valid testnet addresses
+- **Token Distribution**: Send a configured amount of test ASI tokens to valid testnet addresses
 - **Balance Validation**: Automatically checks recipient balance before transfer to prevent exceeding the faucet limit
 - **Transaction Tracking**: Monitor the status of token transfers using deploy IDs
-- **Address Validation**: Validates REV address format before processing requests
+- **Address Validation**: Validates ASI address format before processing requests
 - **Multi-Node Support**: Load balances requests across multiple validator nodes for reliability
 - **CORS Enabled**: Full CORS support for cross-origin requests from the web interface
 
@@ -245,12 +245,12 @@ See [web/package.json](web/package.json) for complete frontend dependencies.
 
 **Token Transfer Flow**
 
-1. User enters REV address in web interface
+1. User enters ASI address in web interface
 2. Frontend validates address format locally
 3. Frontend sends POST request to `/transfer` endpoint
 4. Backend validates address format on server side
 5. Backend queries recipient balance from read-only observer node
-6. Backend verifies balance is below faucet limit (20,000 REV)
+6. Backend verifies balance is below faucet limit (20,000 ASI)
 7. Backend selects random validator node for load balancing
 8. Backend initiates transfer using private key via node CLI
 9. Backend returns deploy ID to frontend
@@ -258,12 +258,12 @@ See [web/package.json](web/package.json) for complete frontend dependencies.
 
 **Balance Check Flow**
 
-1. User enters REV address or receives it from faucet operation
+1. User enters ASI address or receives it from faucet operation
 2. Frontend sends GET request to `/balance/:address`
 3. Backend validates address format
 4. Backend queries balance from read-only observer node via node CLI
 5. Backend returns balance as string representation
-6. Frontend displays formatted balance in REV tokens
+6. Frontend displays formatted balance in ASI tokens
 
 **Transaction Status Flow**
 
@@ -282,7 +282,7 @@ See [web/package.json](web/package.json) for complete frontend dependencies.
 - CORS configuration to control allowed origins
 - Request body size limits (1MB) to prevent DoS attacks
 - Request timeout limits (7 seconds) for resource protection
-- REV address format validation using blockchain-specific rules
+- ASI address format validation using blockchain-specific rules
 
 ---
 
@@ -408,10 +408,10 @@ See [.env.example](server/.env.example) for a complete template with all availab
 #### Faucet Settings
 
 ```bash
-# Amount of REV tokens to send per request (in smallest unit, 1 REV = 10^8 units)
+# Amount of ASI tokens to send per request (in smallest unit, 1 ASI = 10^8 units)
 FAUCET_AMOUNT=10000
 
-# Maximum balance a recipient can have to be eligible (in REV)
+# Maximum balance a recipient can have to be eligible (in ASI)
 FAUCET_MAX_BALANCE=20000
 
 # Private key of the faucet wallet (required, no default)
@@ -483,7 +483,7 @@ Create a `.env` file in the `web/` directory with the following variables:
 # Backend API URL (no trailing slash)
 VITE_BASE_URL=https://faucet-api.asi.io
 
-# Maximum balance limit for faucet eligibility (in REV)
+# Maximum balance limit for faucet eligibility (in ASI)
 VITE_FAUCET_BALANCE_LIMIT=20000
 
 # Token decimal places
@@ -514,7 +514,7 @@ http://localhost:40470
 
 #### POST /transfer
 
-Transfers test REV tokens to a specified address.
+Transfers test ASI tokens to a specified address.
 
 **Request**
 
@@ -531,7 +531,7 @@ Content-Type: application/json
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| to_address | string | Yes | Valid REV address starting with "1111" (50-54 characters) |
+| to_address | string | Yes | Valid ASI address starting with "1111" (50-54 characters) |
 
 **Response**
 
@@ -555,7 +555,7 @@ Error (400 Bad Request):
 - Address must start with "1111"
 - Address length must be between 50 and 54 characters
 - Address must contain only alphanumeric characters
-- Recipient balance must be below 20,000 REV (configurable)
+- Recipient balance must be below 20,000 ASI (configurable)
 - Server must have valid `PRIVATE_KEY` configured
 
 **Status Codes**
@@ -568,7 +568,7 @@ Error (400 Bad Request):
 
 #### GET /balance/:address
 
-Retrieves the current balance of a REV address.
+Retrieves the current balance of a ASI address.
 
 **Request**
 
@@ -580,7 +580,7 @@ GET /balance/11114GuXVLzHJqUqDUJGLJJsn8c1234567890abcdefghijklmnopqrst HTTP/1.1
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| address | string | Yes | Valid REV address to query |
+| address | string | Yes | Valid ASI address to query |
 
 **Response**
 
@@ -591,7 +591,7 @@ Success (200 OK):
 }
 ```
 
-The balance is returned as a string representing the smallest token unit (1 REV = 10^8 or 10^9 units depending on configuration).
+The balance is returned as a string representing the smallest token unit (1 ASI = 10^8 or 10^9 units depending on configuration).
 
 Error (400 Bad Request):
 ```json
