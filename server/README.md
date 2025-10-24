@@ -125,6 +125,8 @@ READONLY_HOST=observer.asi.io
 READONLY_GRPC_PORT=40452
 ```
 
+**Important:** The backend uses 10^8 as the token decimal conversion factor (hardcoded). Frontend should use `VITE_TOKEN_DECIMALS=8` to match.
+
 **Development:**
 ```bash
 # Auto-reload on changes

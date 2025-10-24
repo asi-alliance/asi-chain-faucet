@@ -128,6 +128,8 @@ Transfer failed (400 Bad Request):
 5. Initiate transfer using private key via node CLI
 6. Return deploy ID to client
 
+**Note on Transfer Timeout:** The transfer operation currently uses hardcoded timeout values (`max_wait: 60 seconds`, `check_interval: 5 seconds`) that differ from the configurable `DEPLOY_MAX_WAIT_SEC` and `DEPLOY_CHECK_INTERVAL_SEC` used in deploy status queries.
+
 **Response Time:**
 - Typical: 1-3 seconds
 - Maximum: 7 seconds (enforced by timeout middleware)
@@ -167,7 +169,7 @@ GET /balance/11114GuXVLzHJqUqDUJGLJJsn8c1234567890abcdefghijklmnopqrst HTTP/1.1
 
 | Field | Type | Description |
 |-------|------|-------------|
-| balance | string | Balance in smallest unit (1 ASI = 10^8 or 10^9 units depending on `VITE_TOKEN_DECIMALS`) |
+| balance | string | Balance in smallest unit (motes). In this implementation, 1 ASI = 10^8 motes (8 decimal places) |
 
 **Error Responses:**
 
@@ -193,7 +195,9 @@ Query failed (400 Bad Request):
 - Uses `wallet_balance_command` from node_cli
 - Connects to read-only observer node via gRPC (port 40452)
 - Returns raw balance string without conversion
-- Balance conversion to human-readable format is done on frontend
+- Balance is returned in the smallest unit (motes)
+- Backend uses 10^8 as the conversion factor for balance calculations
+- Frontend should use `VITE_TOKEN_DECIMALS=8` to correctly display balances
 
 **Response Time:**
 - Typical: 100-200ms

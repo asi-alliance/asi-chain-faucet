@@ -82,7 +82,7 @@ cp .env.example .env
 cargo run --release
 ```
 
-Server starts on `http://0.0.0.0:40470` by default.
+Server starts on `http://0.0.0.0:8000` by default (or use `SERVER_PORT` in `.env` to override).
 
 ### Running the Frontend
 
@@ -94,9 +94,9 @@ npm install
 
 # Configure environment
 # Create .env file with:
-# VITE_BASE_URL=http://localhost:40470  # Or http://localhost:3001 (default if not set)
+# VITE_BASE_URL=http://localhost:40470  # Default is http://localhost:3001 if not set
 # VITE_FAUCET_BALANCE_LIMIT=20000
-# VITE_TOKEN_DECIMALS=9
+# VITE_TOKEN_DECIMALS=8
 
 # Start development server
 npm run dev

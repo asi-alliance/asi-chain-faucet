@@ -137,7 +137,7 @@ FAUCET_AMOUNT=10000
 
 **Format:** Integer (positive, non-zero)
 
-**Unit:** Smallest token unit (1 ASI = 10^8 or 10^9 units depending on token decimals)
+**Unit:** Smallest token unit (motes). In this implementation, 1 ASI = 10^8 motes (8 decimal places)
 
 **Default:** 10000
 
@@ -166,7 +166,9 @@ FAUCET_MAX_BALANCE=20000
 
 **Purpose:** Prevents abuse by limiting how many times the same address can receive tokens
 
-**Calculation:** Balance is converted to smallest unit before comparison: `max_balance_allowed = FAUCET_MAX_BALANCE * 10^8`
+**Calculation:** Balance is converted to smallest unit (motes) before comparison: `max_balance_allowed = FAUCET_MAX_BALANCE * 10^8`
+
+**Important:** The backend uses a hardcoded conversion factor of 10^8 (not configurable). This means the token has 8 decimal places in the backend logic.
 
 **Example:**
 ```bash
@@ -347,6 +349,41 @@ Debugging (maximum verbosity):
 ```bash
 RUST_LOG=asi_faucet=trace,tower_http=trace
 ```
+
+---
+
+## Token Decimals and Frontend Integration
+
+### Backend Token Decimals
+
+The backend uses a **hardcoded conversion factor of 10^8** for all balance calculations. This is implemented in `src/api/handlers/transfer.rs`:
+
+```rust
+let max_balance_allowed: u128 = state.config.faucet_max_balance as u128 * 10u128.pow(8);
+```
+
+This means:
+- 1 ASI token = 10^8 motes (smallest unit)
+- The token effectively has **8 decimal places**
+- This value is **not configurable** via environment variables
+
+### Frontend Configuration
+
+The frontend uses `VITE_TOKEN_DECIMALS` environment variable to display balances correctly. To match the backend's behavior:
+
+```bash
+VITE_TOKEN_DECIMALS=8  # Must match backend's 10^8 conversion factor
+```
+
+**Warning:** If the frontend uses a different decimals value (e.g., the default of 9), balance displays will be incorrect by a factor of 10.
+
+### Consistency Requirements
+
+| Component | Setting | Value | Required |
+|-----------|---------|-------|----------|
+| Backend | Hardcoded in code | 10^8 | Fixed |
+| Frontend | VITE_TOKEN_DECIMALS | 8 | Must match |
+| Display | Human-readable | X.XXXXXXXX | 8 decimal places |
 
 ---
 
