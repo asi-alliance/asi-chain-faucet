@@ -6,6 +6,33 @@ For complete project documentation, see the [main README](../README.md) in the r
 
 ---
 
+## Table of Contents
+
+1. [Quick Start](#quick-start)
+2. [Architecture Details](#architecture-details)
+   - [Module Organization](#module-organization)
+   - [Request Processing Flow](#request-processing-flow)
+   - [Node Communication](#node-communication)
+3. [API Endpoints](#api-endpoints)
+   - [POST /transfer](#post-transfer)
+   - [GET /balance/:address](#get-balanceaddress)
+   - [GET /deploy/:deploy_id](#get-deploydeploy_id)
+4. [Configuration Reference](#configuration-reference)
+   - [Environment Variables](#environment-variables)
+   - [Configuration Validation](#configuration-validation)
+5. [Middleware Stack](#middleware-stack)
+6. [Error Handling](#error-handling)
+7. [Logging and Monitoring](#logging-and-monitoring)
+8. [Docker Deployment](#docker-deployment)
+9. [Development](#development)
+10. [Troubleshooting](#troubleshooting)
+11. [Performance Considerations](#performance-considerations)
+12. [Security Best Practices](#security-best-practices)
+13. [Dependencies](#dependencies)
+14. [License](#license)
+
+---
+
 ## Quick Start
 
 1. **Initialize submodules:**
@@ -20,6 +47,7 @@ For complete project documentation, see the [main README](../README.md) in the r
    ```bash
    cp .env.example .env
    # Edit .env with your node configurations and private key
+   # See Configuration Reference section below for details
    ```
 
 3. **Run the server:**

@@ -23,14 +23,31 @@ ASI Chain Faucet is a production-ready service that enables developers and users
 
 ## Table of Contents
 
-1. Overview
-2. Project Structure
-3. Architecture
-4. Installation
-5. Configuration
-6. API Reference
-7. Development
-8. License
+1. [Overview](#overview)
+   - [Key Features](#key-features)
+   - [Use Cases](#use-cases)
+2. [Project Structure](#project-structure)
+   - [Key Directories](#key-directories)
+3. [Architecture](#architecture)
+   - [System Components](#system-components)
+   - [Technology Stack](#technology-stack)
+   - [Data Flow](#data-flow)
+   - [Security Considerations](#security-considerations)
+4. [Installation](#installation)
+   - [Prerequisites](#prerequisites)
+   - [Quick Start](#quick-start)
+5. [Configuration](#configuration)
+   - [Backend Configuration](#backend-configuration)
+   - [Frontend Configuration](#frontend-configuration)
+6. [API Reference](#api-reference)
+   - [POST /transfer](#post-transfer)
+   - [GET /balance/:address](#get-balanceaddress)
+   - [GET /deploy/:deploy_id](#get-deploydeploy_id)
+7. [Development](#development)
+   - [Running Tests](#running-tests)
+   - [Development Mode](#development-mode)
+   - [Building for Production](#building-for-production)
+8. [License](#license)
 
 ---
 
@@ -130,6 +147,8 @@ asi-chain-faucet/
 **web/src/components** - Reusable React components including the main faucet form, balance display, transaction status checker, and various UI elements styled with custom CSS.
 
 **web/src/hooks** - Custom React hooks for managing address input, debouncing user input, and implementing validation logic with real-time feedback.
+
+For detailed backend server documentation, see [server/README.md](server/README.md).
 
 ---
 
@@ -305,7 +324,7 @@ git submodule update
 
 ```bash
 cp .env.example .env
-# Edit .env with your configuration (see Configuration section)
+# Edit .env with your configuration (see Configuration section below)
 ```
 
 3. Build and run the server:
@@ -375,6 +394,8 @@ docker run -p 80:80 asi-chain-faucet-web:latest
 ### Backend Configuration
 
 The backend server is configured through environment variables defined in `.env` file. All settings have default values but must be customized for your deployment.
+
+See [.env.example](server/.env.example) for a complete template with all available configuration options.
 
 #### Faucet Settings
 
@@ -446,7 +467,9 @@ RUST_LOG=asi_faucet=info,tower_http=debug
 
 ### Frontend Configuration
 
-The frontend is configured through environment variables in `.env` file or at build time:
+The frontend is configured through environment variables in `.env` file or at build time.
+
+Create a `.env` file in the `web/` directory with the following variables:
 
 ```bash
 # Backend API URL (no trailing slash)
