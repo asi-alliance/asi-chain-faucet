@@ -157,60 +157,60 @@ For detailed backend server documentation, see [server/README.md](server/README.
 ### System Components
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────┐
 │                         User Browser                             │
-│                                                                   │
-│  ┌────────────────────────────────────────────────────────────┐ │
-│  │         React Frontend (Vite + TypeScript)                 │ │
-│  │  • Address Input & Validation                              │ │
-│  │  • Balance Display                                         │ │
-│  │  • Transaction Status Tracker                             │ │
-│  │  • User Manual                                             │ │
-│  └────────────────────────────────────────────────────────────┘ │
-│                              │                                    │
-│                    HTTPS/CORS│                                    │
-└──────────────────────────────┼────────────────────────────────────┘
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │         React Frontend (Vite + TypeScript)                  │ │
+│  │  • Address Input & Validation                               │ │
+│  │  • Balance Display                                          │ │
+│  │  • Transaction Status Tracker                               │ │
+│  │  • User Manual                                              │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                              │                                   │
+│                    HTTPS/CORS│                                   │
+└──────────────────────────────┼───────────────────────────────────┘
                                │
                                ▼
-┌─────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────┐
 │                    Backend Server (Rust)                         │
-│                                                                   │
-│  ┌────────────────────────────────────────────────────────────┐ │
-│  │                    API Layer (Axum)                        │ │
-│  │  • POST /transfer        - Token distribution              │ │
-│  │  • GET  /balance/:addr   - Balance queries                 │ │
-│  │  • GET  /deploy/:id      - Transaction status              │ │
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                    API Layer (Axum)                         │ │
+│  │  • POST /transfer        - Token distribution               │ │
+│  │  • GET  /balance/:addr   - Balance queries                  │ │
+│  │  • GET  /deploy/:id      - Transaction status               │ │
 │  │                                                             │ │
-│  │  Middleware: CORS, Compression, Timeout, Request ID        │ │
-│  └────────────────────────────────────────────────────────────┘ │
-│                              │                                    │
-│  ┌────────────────────────────────────────────────────────────┐ │
-│  │              NodeCliService (Business Logic)               │ │
-│  │  • Transfer funds with validation                          │ │
-│  │  • Check recipient balance limits                          │ │
-│  │  • Query transaction status                                │ │
-│  │  • Random node selection for load balancing               │ │
-│  └────────────────────────────────────────────────────────────┘ │
-│                              │                                    │
-│                    gRPC/HTTP │                                    │
-└──────────────────────────────┼────────────────────────────────────┘
+│  │  Middleware: CORS, Compression, Timeout, Request ID         │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                              │                                   │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │              NodeCliService (Business Logic)                │ │
+│  │  • Transfer funds with validation                           │ │
+│  │  • Check recipient balance limits                           │ │
+│  │  • Query transaction status                                 │ │
+│  │  • Random node selection for load balancing                 │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                              │                                   │
+│                    gRPC/HTTP │                                   │
+└──────────────────────────────┼───────────────────────────────────┘
                                │
                                ▼
-┌─────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────┐
 │                    ASI Blockchain Network                        │
-│                                                                   │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
-│  │  Validator   │  │  Validator   │  │  Validator   │          │
-│  │    Node 1    │  │    Node 2    │  │    Node 3    │          │
-│  │  (gRPC/HTTP) │  │  (gRPC/HTTP) │  │  (gRPC/HTTP) │          │
-│  └──────────────┘  └──────────────┘  └──────────────┘          │
-│                                                                   │
+│                                                                  │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐            │
+│  │  Validator   │  │  Validator   │  │  Validator   │            │
+│  │    Node 1    │  │    Node 2    │  │    Node 3    │            │
+│  │  (gRPC/HTTP) │  │  (gRPC/HTTP) │  │  (gRPC/HTTP) │            │
+│  └──────────────┘  └──────────────┘  └──────────────┘            │
+│                                                                  │
 │  ┌──────────────┐                                                │
 │  │  Read-Only   │                                                │
-│  │   Observer   │  ← Used for balance & status queries          │
+│  │   Observer   │  ← Used for balance & status queries           │
 │  │  (gRPC/HTTP) │                                                │
 │  └──────────────┘                                                │
-└─────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ### Technology Stack
