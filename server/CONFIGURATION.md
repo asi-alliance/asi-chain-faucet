@@ -37,7 +37,7 @@ PRIVATE_KEY=<your_private_key_here>
 #### NODE_HOSTS
 
 ```bash
-NODE_HOSTS=["<ENTER_NODE1_HOST>","<ENTER_NODE2_HOST>","<ENTER_NODE3_HOST>"]
+NODE_HOSTS=["192.168.1.10","192.168.1.11","192.168.1.12"]
 ```
 
 **Description:** Array of validator node hostnames or IP addresses used for token transfers.
@@ -52,7 +52,9 @@ NODE_HOSTS=["<ENTER_NODE1_HOST>","<ENTER_NODE2_HOST>","<ENTER_NODE3_HOST>"]
 
 **Example:**
 ```bash
-NODE_HOSTS=["http://validator1.example.com:26657","http://validator2.example.com:26657"]
+NODE_HOSTS=["validator1.example.com","validator2.example.com"]
+# or with IP addresses:
+NODE_HOSTS=["192.168.1.10","192.168.1.11","192.168.1.12"]
 ```
 
 ---
@@ -60,7 +62,7 @@ NODE_HOSTS=["http://validator1.example.com:26657","http://validator2.example.com
 #### NODE_GRPC_PORTS
 
 ```bash
-NODE_GRPC_PORTS=[<ENTER_NODE1_GRPC_PORT>,<ENTER_NODE2_GRPC_PORT>,<ENTER_NODE3_GRPC_PORT>]
+NODE_GRPC_PORTS=[40412,40422,40432]
 ```
 
 **Description:** Array of gRPC port numbers for each validator node.
@@ -82,7 +84,7 @@ NODE_GRPC_PORTS=[40412,40422,40432]
 #### NODE_HTTP_PORTS
 
 ```bash
-NODE_HTTP_PORTS=[<ENTER_NODE1_HTTP_PORT>,<ENTER_NODE2_HTTP_PORT>,<ENTER_NODE3_HTTP_PORT>]
+NODE_HTTP_PORTS=[40413,40423,40433]
 ```
 
 **Description:** Array of HTTP port numbers for each validator node.
@@ -104,7 +106,7 @@ NODE_HTTP_PORTS=[40413,40423,40433]
 #### READONLY_HOST
 
 ```bash
-READONLY_HOST=<READONLY_HOST>
+READONLY_HOST=observer.example.com
 ```
 
 **Description:** Hostname or IP address of the read-only observer node used for balance queries and deploy status checks.
@@ -121,7 +123,11 @@ READONLY_HOST=<READONLY_HOST>
 
 **Example:**
 ```bash
+READONLY_HOST=localhost
+# or with custom host:
 READONLY_HOST=observer.example.com
+# or with IP:
+READONLY_HOST=192.168.1.20
 ```
 
 ---

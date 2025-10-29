@@ -2,7 +2,7 @@
 
 # ASI Chain Faucet
 
-[![Status](https://img.shields.io/badge/Status-Production--Ready-4A9D5F?style=for-the-badge)](https://github.com/asi-alliance/asi-chain-faucet)
+[![Status](https://img.shields.io/badge/Status-BETA-FFA500?style=for-the-badge)](https://github.com/asi-alliance/asi-chain-faucet)
 [![Version](https://img.shields.io/badge/Version-0.1.0-A8E6A3?style=for-the-badge)](https://github.com/asi-alliance/asi-chain-faucet/releases)
 [![License](https://img.shields.io/badge/License-Apache%202.0-1A1A1A?style=for-the-badge)](LICENSE)
 [![Docs](https://img.shields.io/badge/Docs-Available-C4F0C1?style=for-the-badge)](https://docs.asichain.io)
@@ -82,7 +82,7 @@ cp .env.example .env
 cargo run --release
 ```
 
-Server starts on `http://0.0.0.0:8000` by default (or use `SERVER_PORT` in `.env` to override).
+Server starts on `http://0.0.0.0:40470` by default (from .env.example).
 
 ### Running the Frontend
 

@@ -101,7 +101,7 @@ FAUCET_MAX_BALANCE=50000
 PRIVATE_KEY=<dev_private_key>
 
 # Local or testnet nodes
-NODE_HOSTS=["<your_node_host>"]
+NODE_HOSTS=["<your_node_host>"]  # Host without port (e.g., "192.168.1.1" or "node.example.com")
 NODE_GRPC_PORTS=[<your_node_grpc_port>]
 NODE_HTTP_PORTS=[<your_node_http_port>]
 READONLY_HOST=localhost
@@ -160,13 +160,13 @@ cargo watch -x run
 
 2. **In another terminal, test endpoints:**
 ```bash
-# Health check (adjust port if needed)
-curl http://localhost:40470/balance/11114GuXVLzHJqUqDUJGLJJsn8c1234567890abcdefghijklmnopqrst
+# Balance check (adjust port if needed)
+curl http://localhost:40470/balance/11114GuXVLzHJqUqDUJGLJJsn8c1ASIhztKZtG1KN1jV48XPBUdVzKBD3R
 
 # Request tokens
 curl -X POST http://localhost:40470/transfer \
   -H "Content-Type: application/json" \
-  -d '{"to_address":"11114GuXVLzHJqUqDUJGLJJsn8c1234567890abcdefghijklmnopqrst"}'
+  -d '{"to_address":"11114GuXVLzHJqUqDUJGLJJsn8c1ASIhztKZtG1KN1jV48XPBUdVzKBD3R"}'
 ```
 
 3. **Make code changes** - server auto-reloads with cargo-watch
@@ -481,7 +481,7 @@ wireshark
 # Using curl with verbose output (adjust port if needed)
 curl -v -X POST http://localhost:40470/transfer \
   -H "Content-Type: application/json" \
-  -d '{"to_address":"11114GuXVLzHJqUqDUJGLJJsn8c1234567890abcdefghijklmnopqrst"}'
+  -d '{"to_address":"11114GuXVLzHJqUqDUJGLJJsn8c1ASIhztKZtG1KN1jV48XPBUdVzKBD3R"}'
 ```
 
 ### Getting Help

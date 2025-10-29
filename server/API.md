@@ -47,7 +47,7 @@ POST /transfer HTTP/1.1
 Content-Type: application/json
 
 {
-  "to_address": "11114GuXVLzHJqUqDUJGLJJsn8c1234567890abcdefghijklmnopqrst"
+  "to_address": "11114GuXVLzHJqUqDUJGLJJsn8c1ASIhztKZtG1KN1jV48XPBUdVzKBD3R"
 }
 ```
 
@@ -78,16 +78,16 @@ Invalid address format (400 Bad Request):
 {
   "error": "Validation Error",
   "details": "Address must start with 1111",
-  "timestamp": "2025-10-24T12:34:56.789Z"
+  "timestamp": "2025-10-29T12:34:56.789Z"
 }
 ```
 
 Balance exceeds limit (400 Bad Request):
 ```json
 {
-  "error": "Address balance exceeds faucet eligibility threshold",
-  "details": null,
-  "timestamp": "2025-10-24T12:34:56.789Z"
+  "error": "Validation Error",
+  "details": "Address balance exceeds faucet eligibility threshold",
+  "timestamp": "2025-10-29T12:34:56.789Z"
 }
 ```
 
@@ -96,7 +96,7 @@ Transfer failed (400 Bad Request):
 {
   "error": "FAUCET: Transfer failed",
   "details": "Insufficient funds in faucet wallet",
-  "timestamp": "2025-10-24T12:34:56.789Z"
+  "timestamp": "2025-10-29T12:34:56.789Z"
 }
 ```
 
@@ -148,7 +148,7 @@ Retrieves the current balance of a ASI address from the read-only observer node.
 **Request:**
 
 ```http
-GET /balance/11114GuXVLzHJqUqDUJGLJJsn8c1234567890abcdefghijklmnopqrst HTTP/1.1
+GET /balance/11114GuXVLzHJqUqDUJGLJJsn8c1ASIhztKZtG1KN1jV48XPBUdVzKBD3R HTTP/1.1
 ```
 
 **Path Parameters:**
@@ -176,9 +176,9 @@ GET /balance/11114GuXVLzHJqUqDUJGLJJsn8c1234567890abcdefghijklmnopqrst HTTP/1.1
 Invalid address format (400 Bad Request):
 ```json
 {
-  "error": "Invalid address format",
+  "error": "Validation Error",
   "details": "Address must start with 1111",
-  "timestamp": "2025-10-24T12:34:56.789Z"
+  "timestamp": "2025-10-29T12:34:56.789Z"
 }
 ```
 
@@ -187,7 +187,7 @@ Query failed (400 Bad Request):
 {
   "error": "FAUCET: Balance retrieval failed",
   "details": "Failed to query balance from blockchain",
-  "timestamp": "2025-10-24T12:34:56.789Z"
+  "timestamp": "2025-10-29T12:34:56.789Z"
 }
 ```
 
@@ -291,7 +291,7 @@ Invalid deploy ID format (400 Bad Request):
 {
   "error": "Validation Error",
   "details": "FAUCET: Invalid deploy ID format (must be 100-160 alphanumeric chars)",
-  "timestamp": "2025-10-24T12:34:56.789Z"
+  "timestamp": "2025-10-29T12:34:56.789Z"
 }
 ```
 
@@ -300,7 +300,7 @@ Query failed (500 Internal Server Error):
 {
   "error": "Internal Server Error",
   "details": "FAUCET: Failed to retrieve deploy info",
-  "timestamp": "2025-10-24T12:34:56.789Z"
+  "timestamp": "2025-10-29T12:34:56.789Z"
 }
 ```
 
@@ -364,14 +364,14 @@ Recommended limits:
 
 **1. Check current balance:**
 ```bash
-curl http://localhost:40470/balance/11114GuXVLzHJqUqDUJGLJJsn8c1234567890abcdefghijklmnopqrst
+curl http://localhost:40470/balance/11114GuXVLzHJqUqDUJGLJJsn8c1ASIhztKZtG1KN1jV48XPBUdVzKBD3R
 ```
 
 **2. Request tokens:**
 ```bash
 curl -X POST http://localhost:40470/transfer \
   -H "Content-Type: application/json" \
-  -d '{"to_address":"11114GuXVLzHJqUqDUJGLJJsn8c1234567890abcdefghijklmnopqrst"}'
+  -d '{"to_address":"11114GuXVLzHJqUqDUJGLJJsn8c1ASIhztKZtG1KN1jV48XPBUdVzKBD3R"}'
 ```
 
 **3. Check deploy status:**
