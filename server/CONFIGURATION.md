@@ -37,7 +37,7 @@ PRIVATE_KEY=<your_private_key_here>
 #### NODE_HOSTS
 
 ```bash
-NODE_HOSTS=["http://node1.asi.io","http://node2.asi.io","http://node3.asi.io"]
+NODE_HOSTS=["<ENTER_NODE1_HOST>","<ENTER_NODE2_HOST>","<ENTER_NODE3_HOST>"]
 ```
 
 **Description:** Array of validator node hostnames or IP addresses used for token transfers.
@@ -48,10 +48,11 @@ NODE_HOSTS=["http://node1.asi.io","http://node2.asi.io","http://node3.asi.io"]
 - Must have same length as `NODE_GRPC_PORTS` and `NODE_HTTP_PORTS`
 - At least one node must be specified
 - All nodes should be accessible from the server
+- This is a REQUIRED variable with no default value
 
 **Example:**
 ```bash
-NODE_HOSTS=["http://validator1.asi.io","http://validator2.asi.io","http://validator3.asi.io"]
+NODE_HOSTS=["http://validator1.example.com:26657","http://validator2.example.com:26657"]
 ```
 
 ---
@@ -59,7 +60,7 @@ NODE_HOSTS=["http://validator1.asi.io","http://validator2.asi.io","http://valida
 #### NODE_GRPC_PORTS
 
 ```bash
-NODE_GRPC_PORTS=[40412,40422,40432]
+NODE_GRPC_PORTS=[<ENTER_NODE1_GRPC_PORT>,<ENTER_NODE2_GRPC_PORT>,<ENTER_NODE3_GRPC_PORT>]
 ```
 
 **Description:** Array of gRPC port numbers for each validator node.
@@ -69,7 +70,7 @@ NODE_GRPC_PORTS=[40412,40422,40432]
 **Requirements:**
 - Must have same length as `NODE_HOSTS` and `NODE_HTTP_PORTS`
 - Each port corresponds to the node at the same index in `NODE_HOSTS`
-- Default validator gRPC port: 404X2 (where X is the node number, e.g., 40412, 40422, 40432)
+- This is a REQUIRED variable with no default value
 
 **Example:**
 ```bash
@@ -81,7 +82,7 @@ NODE_GRPC_PORTS=[40412,40422,40432]
 #### NODE_HTTP_PORTS
 
 ```bash
-NODE_HTTP_PORTS=[40413,40423,40433]
+NODE_HTTP_PORTS=[<ENTER_NODE1_HTTP_PORT>,<ENTER_NODE2_HTTP_PORT>,<ENTER_NODE3_HTTP_PORT>]
 ```
 
 **Description:** Array of HTTP port numbers for each validator node.
@@ -91,7 +92,7 @@ NODE_HTTP_PORTS=[40413,40423,40433]
 **Requirements:**
 - Must have same length as `NODE_HOSTS` and `NODE_GRPC_PORTS`
 - Each port corresponds to the node at the same index in `NODE_HOSTS`
-- Default validator HTTP port: 404X3 (where X is the node number, e.g., 40413, 40423, 40433)
+- This is a REQUIRED variable with no default value
 
 **Example:**
 ```bash
@@ -103,12 +104,14 @@ NODE_HTTP_PORTS=[40413,40423,40433]
 #### READONLY_HOST
 
 ```bash
-READONLY_HOST=observer.asi.io
+READONLY_HOST=<READONLY_HOST>
 ```
 
 **Description:** Hostname or IP address of the read-only observer node used for balance queries and deploy status checks.
 
 **Format:** String (hostname or IP)
+
+**Default:** localhost
 
 **Purpose:**
 - Balance queries
@@ -118,7 +121,7 @@ READONLY_HOST=observer.asi.io
 
 **Example:**
 ```bash
-READONLY_HOST=192.168.1.100
+READONLY_HOST=observer.example.com
 ```
 
 ---
@@ -400,12 +403,12 @@ FAUCET_MAX_BALANCE=20000
 PRIVATE_KEY=<your_private_key>
 
 # Validator Nodes
-NODE_HOSTS=["http://node1.asi.io","http://node2.asi.io","http://node3.asi.io"]
-NODE_GRPC_PORTS=[40412,40422,40432]
-NODE_HTTP_PORTS=[40413,40423,40433]
+NODE_HOSTS=["<ENTER_NODE1_HOST>","<ENTER_NODE2_HOST>","<ENTER_NODE3_HOST>"]
+NODE_GRPC_PORTS=[<ENTER_NODE1_GRPC_PORT>,<ENTER_NODE2_GRPC_PORT>,<ENTER_NODE3_GRPC_PORT>]
+NODE_HTTP_PORTS=[<ENTER_NODE1_HTTP_PORT>,<ENTER_NODE2_HTTP_PORT>,<ENTER_NODE3_HTTP_PORT>]
 
 # Read-Only Observer Node
-READONLY_HOST=observer.asi.io
+READONLY_HOST=<READONLY_HOST>
 READONLY_GRPC_PORT=40452
 READONLY_HTTP_PORT=40453
 
@@ -543,11 +546,11 @@ cargo run 2>&1 | grep "Configuration loaded"
 
 **Verify node connectivity:**
 ```bash
-# Test gRPC port
-nc -zv validator1.asi.io 40451
+# Test gRPC port (replace with your node details)
+nc -zv <your_node_host> <your_grpc_port>
 
-# Test HTTP port  
-curl http://validator1.asi.io:40453
+# Test HTTP port (replace with your node details)
+curl http://<your_node_host>:<your_http_port>
 ```
 
 **Test configuration:**

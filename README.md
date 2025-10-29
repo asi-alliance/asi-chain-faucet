@@ -240,13 +240,13 @@ See [server/Cargo.toml](server/Cargo.toml) and [web/package.json](web/package.js
 - Required vs optional settings
 - Validation rules
 - Security best practices
-- Docker and Kubernetes configuration
+- Docker deployment configuration
 
 **[server/DEVELOPMENT.md](server/DEVELOPMENT.md)** - Development guide
 - Development environment setup
 - Running and debugging
 - Code structure and patterns
-- Building and testing
+- Building
 - Troubleshooting common issues
 
 ### Additional Resources

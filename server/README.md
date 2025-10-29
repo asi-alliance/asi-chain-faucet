@@ -45,7 +45,7 @@ For complete project documentation, see the [main README](../README.md) in the r
    cargo run --release
    ```
 
-The server starts on `http://0.0.0.0:40470` by default.
+The server starts on `http://0.0.0.0:40470` by default (from .env.example).
 
 ---
 
@@ -91,11 +91,12 @@ src/
 **Validator Nodes** (write operations):
 - Multiple nodes for load balancing
 - Random selection per request
-- gRPC ports end with X2 (40412, 40422, etc.), HTTP ports end with X3 (40413, 40423, etc.)
+- Configured via NODE_HOSTS, NODE_GRPC_PORTS, NODE_HTTP_PORTS
 
 **Read-Only Observer Node** (read operations):
 - Balance queries and status checks
-- gRPC port 40452, HTTP port 40453
+- Default gRPC port: 40452, HTTP port: 40453
+- Configured via READONLY_HOST, READONLY_GRPC_PORT, READONLY_HTTP_PORT
 - Consistent read performance
 
 ---
@@ -118,11 +119,12 @@ src/
 **Key Configuration:**
 ```bash
 PRIVATE_KEY=<required>
-NODE_HOSTS=["http://node1.asi.io","http://node2.asi.io"]
-NODE_GRPC_PORTS=[40412,40422]
-NODE_HTTP_PORTS=[40413,40423]
-READONLY_HOST=observer.asi.io
-READONLY_GRPC_PORT=40452
+NODE_HOSTS=["<ENTER_NODE1_HOST>","<ENTER_NODE2_HOST>"]
+NODE_GRPC_PORTS=[<ENTER_NODE1_GRPC_PORT>,<ENTER_NODE2_GRPC_PORT>]
+NODE_HTTP_PORTS=[<ENTER_NODE1_HTTP_PORT>,<ENTER_NODE2_HTTP_PORT>]
+READONLY_HOST=<READONLY_HOST>  # default: localhost
+READONLY_GRPC_PORT=40452       # default: 40452
+READONLY_HTTP_PORT=40453       # default: 40453
 ```
 
 **Important:** The backend uses 10^8 as the token decimal conversion factor (hardcoded). Frontend should use `VITE_TOKEN_DECIMALS=8` to match.

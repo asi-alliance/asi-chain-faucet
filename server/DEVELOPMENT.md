@@ -79,10 +79,10 @@ cp .env.example .env
 ```bash
 # Minimal development config
 PRIVATE_KEY=<your_test_private_key>
-NODE_HOSTS=["http://testnet-node1:26657"]
-NODE_GRPC_PORTS=[40412]
-NODE_HTTP_PORTS=[40413]
-READONLY_HOST=testnet-observer.asi.io
+NODE_HOSTS=["<your_testnet_node_host>"]
+NODE_GRPC_PORTS=[<your_node_grpc_port>]
+NODE_HTTP_PORTS=[<your_node_http_port>]
+READONLY_HOST=<your_readonly_host>
 RUST_LOG=asi_faucet=debug,tower_http=debug
 ```
 
@@ -101,16 +101,16 @@ FAUCET_MAX_BALANCE=50000
 PRIVATE_KEY=<dev_private_key>
 
 # Local or testnet nodes
-NODE_HOSTS=["http://localhost:26657"]
-NODE_GRPC_PORTS=[40412]
-NODE_HTTP_PORTS=[40413]
+NODE_HOSTS=["<your_node_host>"]
+NODE_GRPC_PORTS=[<your_node_grpc_port>]
+NODE_HTTP_PORTS=[<your_node_http_port>]
 READONLY_HOST=localhost
 READONLY_GRPC_PORT=40452
 READONLY_HTTP_PORT=40453
 
 # Development server settings
 SERVER_HOST=127.0.0.1
-SERVER_PORT=40470
+SERVER_PORT=8000
 
 # Verbose logging
 RUST_LOG=asi_faucet=debug,tower_http=debug,axum=debug
@@ -160,7 +160,7 @@ cargo watch -x run
 
 2. **In another terminal, test endpoints:**
 ```bash
-# Health check
+# Health check (adjust port if needed)
 curl http://localhost:40470/balance/11114GuXVLzHJqUqDUJGLJJsn8c1234567890abcdefghijklmnopqrst
 
 # Request tokens
@@ -390,7 +390,7 @@ export OPENSSL_DIR=$(brew --prefix openssl)
 
 **Solution:**
 ```bash
-# Find process using port
+# Find process using port (adjust port number)
 lsof -i :40470
 
 # Kill process
@@ -469,7 +469,7 @@ curl -v http://<node_host>:<http_port>
 
 **Capture HTTP traffic:**
 ```bash
-# Using tcpdump
+# Using tcpdump (adjust port if SERVER_PORT changed)
 sudo tcpdump -i any -A 'tcp port 40470'
 
 # Using wireshark
@@ -478,7 +478,7 @@ wireshark
 
 **Test API endpoints:**
 ```bash
-# Using curl with verbose output
+# Using curl with verbose output (adjust port if needed)
 curl -v -X POST http://localhost:40470/transfer \
   -H "Content-Type: application/json" \
   -d '{"to_address":"11114GuXVLzHJqUqDUJGLJJsn8c1234567890abcdefghijklmnopqrst"}'
