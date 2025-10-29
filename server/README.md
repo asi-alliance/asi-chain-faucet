@@ -91,7 +91,7 @@ src/
 **Validator Nodes** (write operations):
 - Multiple nodes for load balancing
 - Random selection per request
-- gRPC port 40451, HTTP port 40453
+- gRPC ports end with X2 (40412, 40422, etc.), HTTP ports end with X3 (40413, 40423, etc.)
 
 **Read-Only Observer Node** (read operations):
 - Balance queries and status checks
@@ -118,9 +118,9 @@ src/
 **Key Configuration:**
 ```bash
 PRIVATE_KEY=<required>
-NODE_HOSTS=["host1","host2"]
-NODE_GRPC_PORTS=[40451,40451]
-NODE_HTTP_PORTS=[40453,40453]
+NODE_HOSTS=["http://node1.asi.io","http://node2.asi.io"]
+NODE_GRPC_PORTS=[40412,40422]
+NODE_HTTP_PORTS=[40413,40423]
 READONLY_HOST=observer.asi.io
 READONLY_GRPC_PORT=40452
 ```

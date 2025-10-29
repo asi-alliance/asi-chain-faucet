@@ -37,7 +37,7 @@ PRIVATE_KEY=<your_private_key_here>
 #### NODE_HOSTS
 
 ```bash
-NODE_HOSTS=["validator1.asi.io","validator2.asi.io","validator3.asi.io"]
+NODE_HOSTS=["http://node1.asi.io","http://node2.asi.io","http://node3.asi.io"]
 ```
 
 **Description:** Array of validator node hostnames or IP addresses used for token transfers.
@@ -51,7 +51,7 @@ NODE_HOSTS=["validator1.asi.io","validator2.asi.io","validator3.asi.io"]
 
 **Example:**
 ```bash
-NODE_HOSTS=["192.168.1.10","192.168.1.11","192.168.1.12"]
+NODE_HOSTS=["http://validator1.asi.io","http://validator2.asi.io","http://validator3.asi.io"]
 ```
 
 ---
@@ -59,7 +59,7 @@ NODE_HOSTS=["192.168.1.10","192.168.1.11","192.168.1.12"]
 #### NODE_GRPC_PORTS
 
 ```bash
-NODE_GRPC_PORTS=[40451,40451,40451]
+NODE_GRPC_PORTS=[40412,40422,40432]
 ```
 
 **Description:** Array of gRPC port numbers for each validator node.
@@ -69,11 +69,11 @@ NODE_GRPC_PORTS=[40451,40451,40451]
 **Requirements:**
 - Must have same length as `NODE_HOSTS` and `NODE_HTTP_PORTS`
 - Each port corresponds to the node at the same index in `NODE_HOSTS`
-- Default validator gRPC port: 40451
+- Default validator gRPC port: 404X2 (where X is the node number, e.g., 40412, 40422, 40432)
 
 **Example:**
 ```bash
-NODE_GRPC_PORTS=[40451,40452,40453]
+NODE_GRPC_PORTS=[40412,40422,40432]
 ```
 
 ---
@@ -81,7 +81,7 @@ NODE_GRPC_PORTS=[40451,40452,40453]
 #### NODE_HTTP_PORTS
 
 ```bash
-NODE_HTTP_PORTS=[40453,40453,40453]
+NODE_HTTP_PORTS=[40413,40423,40433]
 ```
 
 **Description:** Array of HTTP port numbers for each validator node.
@@ -91,11 +91,11 @@ NODE_HTTP_PORTS=[40453,40453,40453]
 **Requirements:**
 - Must have same length as `NODE_HOSTS` and `NODE_GRPC_PORTS`
 - Each port corresponds to the node at the same index in `NODE_HOSTS`
-- Default validator HTTP port: 40453
+- Default validator HTTP port: 404X3 (where X is the node number, e.g., 40413, 40423, 40433)
 
 **Example:**
 ```bash
-NODE_HTTP_PORTS=[40453,40454,40455]
+NODE_HTTP_PORTS=[40413,40423,40433]
 ```
 
 ---
@@ -145,7 +145,7 @@ FAUCET_AMOUNT=10000
 
 **Example:**
 ```bash
-FAUCET_AMOUNT=50000  # Send 50,000 smallest units per request
+FAUCET_AMOUNT=10000  # Send 10,000 smallest units per request
 ```
 
 ---
@@ -172,7 +172,7 @@ FAUCET_MAX_BALANCE=20000
 
 **Example:**
 ```bash
-FAUCET_MAX_BALANCE=10000  # Addresses with 10,000+ ASI are ineligible
+FAUCET_MAX_BALANCE=20000  # Addresses with 20,000+ ASI are ineligible
 ```
 
 ---
@@ -400,9 +400,9 @@ FAUCET_MAX_BALANCE=20000
 PRIVATE_KEY=<your_private_key>
 
 # Validator Nodes
-NODE_HOSTS=["validator1.asi.io","validator2.asi.io","validator3.asi.io"]
-NODE_GRPC_PORTS=[40451,40451,40451]
-NODE_HTTP_PORTS=[40453,40453,40453]
+NODE_HOSTS=["http://node1.asi.io","http://node2.asi.io","http://node3.asi.io"]
+NODE_GRPC_PORTS=[40412,40422,40432]
+NODE_HTTP_PORTS=[40413,40423,40433]
 
 # Read-Only Observer Node
 READONLY_HOST=observer.asi.io
@@ -486,36 +486,6 @@ Error: FAUCET_AMOUNT must be greater than 0
 - Use the same key across environments
 - Store in plaintext files
 
-### Production Configuration
-
-```bash
-# Use production-grade nodes
-NODE_HOSTS=["prod-validator1.asi.io","prod-validator2.asi.io"]
-READONLY_HOST=prod-observer.asi.io
-
-# Strict logging
-RUST_LOG=asi_faucet=info,tower_http=warn
-
-# Reasonable limits
-FAUCET_AMOUNT=5000
-FAUCET_MAX_BALANCE=10000
-```
-
-### Development Configuration
-
-```bash
-# Use testnet nodes
-NODE_HOSTS=["testnet-validator1.asi.io"]
-READONLY_HOST=testnet-observer.asi.io
-
-# Verbose logging
-RUST_LOG=asi_faucet=debug,tower_http=debug
-
-# Generous limits for testing
-FAUCET_AMOUNT=100000
-FAUCET_MAX_BALANCE=50000
-```
-
 ---
 
 ## Environment-Specific Configuration
@@ -537,32 +507,7 @@ services:
 docker run --env-file .env asi-faucet-server
 ```
 
-### Kubernetes Deployment
 
-Use ConfigMaps for non-sensitive data and Secrets for sensitive data:
-
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: faucet-config
-data:
-  FAUCET_AMOUNT: "10000"
-  FAUCET_MAX_BALANCE: "20000"
-  SERVER_PORT: "40470"
-```
-
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: faucet-secrets
-type: Opaque
-stringData:
-  PRIVATE_KEY: "<your_private_key>"
-```
-
----
 
 ## Troubleshooting Configuration
 

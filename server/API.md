@@ -266,13 +266,6 @@ GET /deploy/d1f2e3b4a5c6789012345678901234567890abcdef1234567890abcdef12 HTTP/1.
 }
 ```
 
-**Status: Unknown**
-```json
-{
-  "status": "Unknown"
-}
-```
-
 **Response Fields:**
 
 | Field | Type | Required | Description |
@@ -290,7 +283,6 @@ GET /deploy/d1f2e3b4a5c6789012345678901234567890abcdef1234567890abcdef12 HTTP/1.
 | Finalized | Transaction successfully finalized in block |
 | DeployError | Error during transaction deployment |
 | FinalizationError | Error during block finalization |
-| Unknown | Deploy ID not found or status cannot be determined |
 
 **Error Responses:**
 
@@ -387,57 +379,7 @@ curl -X POST http://localhost:40470/transfer \
 curl http://localhost:40470/deploy/d1f2e3b4a5c6789012345678901234567890abcdef12
 ```
 
-### Error Handling Example
 
-```javascript
-async function requestTokens(address) {
-  try {
-    const response = await fetch('http://localhost:40470/transfer', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to_address: address })
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      console.error(`Error: ${data.error}`);
-      if (data.details) {
-        console.error(`Details: ${data.details}`);
-      }
-      return null;
-    }
-    
-    return data.deploy_id;
-  } catch (error) {
-    console.error('Network error:', error);
-    return null;
-  }
-}
-```
-
----
-
-## HTTP Headers
-
-### Request Headers
-
-**Required for POST:**
-- `Content-Type: application/json`
-
-**Optional:**
-- `Accept: application/json`
-
-### Response Headers
-
-All responses include:
-- `Content-Type: application/json`
-- `X-Request-ID: <uuid>` - Unique request identifier for tracing
-
-Compressed responses (when supported):
-- `Content-Encoding: gzip` or `Content-Encoding: br`
-
----
 
 ## Error Codes Summary
 

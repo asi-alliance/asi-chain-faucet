@@ -11,9 +11,7 @@ Complete development guide for ASI Chain Faucet backend server.
 3. [Running the Server](#running-the-server)
 4. [Code Structure](#code-structure)
 5. [Building](#building)
-6. [Testing](#testing)
-7. [Debugging](#debugging)
-8. [Troubleshooting](#troubleshooting)
+6. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -81,9 +79,9 @@ cp .env.example .env
 ```bash
 # Minimal development config
 PRIVATE_KEY=<your_test_private_key>
-NODE_HOSTS=["testnet-validator.asi.io"]
-NODE_GRPC_PORTS=[40451]
-NODE_HTTP_PORTS=[40453]
+NODE_HOSTS=["http://testnet-node1:26657"]
+NODE_GRPC_PORTS=[40412]
+NODE_HTTP_PORTS=[40413]
 READONLY_HOST=testnet-observer.asi.io
 RUST_LOG=asi_faucet=debug,tower_http=debug
 ```
@@ -91,33 +89,6 @@ RUST_LOG=asi_faucet=debug,tower_http=debug
 ---
 
 ## Development Environment
-
-### Recommended IDE Setup
-
-**Visual Studio Code:**
-
-Install extensions:
-- rust-analyzer - Rust language support
-- crates - Cargo dependency management
-- Better TOML - TOML syntax highlighting
-
-**Settings (.vscode/settings.json):**
-```json
-{
-  "rust-analyzer.checkOnSave.command": "clippy",
-  "editor.formatOnSave": true,
-  "[rust]": {
-    "editor.defaultFormatter": "rust-lang.rust-analyzer"
-  }
-}
-```
-
-**IntelliJ IDEA / RustRover:**
-
-Install Rust plugin and configure:
-- File → Settings → Languages & Frameworks → Rust
-- Enable external linter: Clippy
-- Enable formatter: Rustfmt
 
 ### Environment Variables for Development
 
@@ -130,9 +101,9 @@ FAUCET_MAX_BALANCE=50000
 PRIVATE_KEY=<dev_private_key>
 
 # Local or testnet nodes
-NODE_HOSTS=["localhost"]
-NODE_GRPC_PORTS=[40451]
-NODE_HTTP_PORTS=[40453]
+NODE_HOSTS=["http://localhost:26657"]
+NODE_GRPC_PORTS=[40412]
+NODE_HTTP_PORTS=[40413]
 READONLY_HOST=localhost
 READONLY_GRPC_PORT=40452
 READONLY_HTTP_PORT=40453
@@ -358,105 +329,8 @@ cargo build --release --target x86_64-unknown-linux-musl
 docker build -t asi-faucet-server:latest .
 ```
 
----
 
-## Testing
 
-### Running Tests
-
-```bash
-# Run all tests
-cargo test
-
-# Run with output
-cargo test -- --nocapture
-
-# Run specific test
-cargo test test_name
-
-# Run tests in specific module
-cargo test api::handlers::transfer
-```
-
-### Code Quality
-
-**Format code:**
-```bash
-cargo fmt
-```
-
-**Check formatting without changing files:**
-```bash
-cargo fmt -- --check
-```
-
----
-
-## Debugging
-
-### Enabling Debug Logs
-
-```bash
-RUST_LOG=asi_faucet=debug,tower_http=trace cargo run
-```
-
-### Using Rust Debugger
-
-**With VS Code:**
-
-Create `.vscode/launch.json`:
-```json
-{
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "type": "lldb",
-      "request": "launch",
-      "name": "Debug",
-      "cargo": {
-        "args": ["build", "--bin=asi-faucet"],
-        "filter": {
-          "name": "asi-faucet",
-          "kind": "bin"
-        }
-      },
-      "args": [],
-      "cwd": "${workspaceFolder}/server"
-    }
-  ]
-}
-```
-
-**With LLDB:**
-```bash
-rust-lldb target/debug/asi-faucet
-```
-
-### Debugging Techniques
-
-**Add debug prints:**
-```rust
-dbg!(&variable);
-println!("Debug: {:?}", variable);
-```
-
-**Use tracing:**
-```rust
-use tracing::{debug, info, warn, error};
-
-debug!("Debug message: {:?}", data);
-info!("Info message");
-warn!("Warning message");
-error!("Error occurred: {}", error);
-```
-
-**Inspect HTTP requests:**
-```bash
-# Enable tower_http middleware logging
-RUST_LOG=tower_http=trace cargo run
-```
-
----
 
 ## Troubleshooting
 
