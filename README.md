@@ -1,6 +1,6 @@
 <div align="center">
 
-# ASI Chain Faucet
+# ASI Chain: Faucet
 
 [![Status](https://img.shields.io/badge/Status-BETA-FFA500?style=for-the-badge)](https://github.com/asi-alliance/asi-chain-faucet)
 [![Version](https://img.shields.io/badge/Version-0.1.0-A8E6A3?style=for-the-badge)](https://github.com/asi-alliance/asi-chain-faucet/releases)
