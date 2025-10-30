@@ -3,8 +3,8 @@
 }
 
 .input-holder {
-    height: 50px;
     margin-bottom: 5px;
+    height: 50px;
 }
 
 .helper-text {
@@ -12,3 +12,4 @@
     padding: 0 10px;
     opacity: .6;
 }
+

@@ -26,7 +26,7 @@ const DebounceInput = ({
             <div className="input-holder">
                 <input
                     type="text"
-                    id="addressInput"
+                    className="addressInput text-2"
                     name="addressInput"
                     value={value}
                     placeholder={placeholder}
