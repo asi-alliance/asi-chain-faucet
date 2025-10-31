@@ -1,16 +1,16 @@
 .user-manual-entry {
-    border-radius: 10px;
+    border-radius: 0.625rem;
     background: var(--primary-color);
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 35px;
-    height: 35px;
+    width: 2.1875rem;
+    height: 2.1875rem;
 }
 
 .user-manual-entry svg {
-    width: 20px;
-    height: 20px;
+    width: 1.25rem;
+    height: 1.25rem;
 }
 
 .user-manual-entry:hover {

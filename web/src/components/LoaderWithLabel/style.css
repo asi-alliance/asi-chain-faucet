@@ -2,14 +2,14 @@
     display: flex;
     flex-wrap: nowrap;
     align-items: center;
-    gap: 15px;
-    padding: 10px;
+    gap: 0.9375rem;
+    padding: 0.625rem;
 }
 
 .spinner-container img,
 .spinner-container svg {
-    width: 25px;
-    height: 25px;
+    width: 1.5625rem;
+    height: 1.5625rem;
     animation: loader 1s infinite;
 }
 

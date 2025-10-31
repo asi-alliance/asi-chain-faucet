@@ -1,5 +1,5 @@
 :root {
-    --navbar-height: 60px;
+    --navbar-height: 3.75rem;
 }
 
 .content-container {
@@ -14,5 +14,5 @@ header {
 
 main {
     padding-top: var(--navbar-height);
-    max-width: 1080px;
+    max-width: 67.5rem;
 }
