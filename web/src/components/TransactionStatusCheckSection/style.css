@@ -1,7 +1,7 @@
 .hash-section-controls {
-    padding: 0 10px;
+    padding: 0 0.625rem;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 50px;
+    height: 3.125rem;
 }

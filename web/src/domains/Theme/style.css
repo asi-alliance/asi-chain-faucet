@@ -36,10 +36,10 @@ input {
   outline: none;
   height: 100%;
   width: 100%;
-  border-radius: 8px;
-  padding: 0 15px;
+  border-radius: 0.5rem;
+  padding: 0 0.9375rem;
   background: var(--secondary-color);
-  border: 1px solid var(--primary-color);
+  border: 0.0625rem solid var(--primary-color);
   color: var(--text-color);
 }
 
@@ -52,9 +52,9 @@ input:focus {
 button {
   border: none;
   outline: none;
-  padding: 8px 12px;
-  font-size: 16px;
-  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  font-size: 1rem;
+  border-radius: 0.5rem;
   background: var(--accent-color);
   color: var(--text-color);
 }
@@ -74,43 +74,45 @@ button:disabled {
 }
 
 h1, h2, h3, h4, h5 {
+  margin: 0;
+  padding: 0;
   letter-spacing: 0;
 }
 
 h1 {
-    font-size: 32px;
+    font-size: 2rem;
 }
 
 h2 {
-    font-size: 24px;
+    font-size: 1.5rem;
 }
 
 h3 {
-    font-size: 18px;
+    font-size: 1.125rem;
 }
 
 h4 {
-    font-size: 16px;
+    font-size: 1rem;
 }
 
 h5 {
-    font-size: 14px;
+    font-size: 0.875rem;
 }
 
 .text-1 {
-    font-size: 18px;
+    font-size: 1.125rem;
 }
 
 .text-2 {
-    font-size: 16px;
+    font-size: 1rem;
 }
 
 .text-3 {
-    font-size: 14px;
+    font-size: 0.875rem;
 }
 
 .text-4 {
-    font-size: 12px;
+    font-size: 0.75rem;
 }
 
 [data-tooltip] {
@@ -131,7 +133,7 @@ h5 {
 
 [data-tooltip]::before {
   content: '';
-  border: 6px solid transparent;
+  border: 0.375rem solid transparent;
   z-index: 101;
 }
 
@@ -143,8 +145,8 @@ h5 {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding: 8px 12px;
-  border-radius: 5px;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.3125rem;
   background: var(--primary-color);
   color: var(--text-color);
   z-index: 100;
@@ -169,7 +171,7 @@ h5 {
 
 [data-tooltip]:not([data-flow])::after,
 [data-tooltip][data-flow^="top"]::after {
-  bottom: calc(100% + 5px);
+  bottom: calc(100% + 0.3125rem);
 }
 
 [data-tooltip]:not([data-flow])::before,
@@ -187,7 +189,7 @@ h5 {
 }
 
 [data-tooltip][data-flow^="bottom"]::after {
-  top: calc(100% + 5px);
+  top: calc(100% + 0.3125rem);
 }
 
 [data-tooltip][data-flow^="bottom"]::before,
@@ -200,13 +202,13 @@ h5 {
   top: 50%;
   border-right-width: 0;
   border-left-color: var(--primary-color);
-  left: calc(0em - 5px);
+  left: calc(0em - 0.3125rem);
   transform: translate(-.5em, -50%);
 }
 
 [data-tooltip][data-flow^="left"]::after {
   top: 50%;
-  right: calc(100% + 5px);
+  right: calc(100% + 0.3125rem);
   transform: translate(-.4em, -50%);
 }
 
@@ -220,7 +222,7 @@ h5 {
 
 [data-tooltip][data-flow^="right"]::after {
   top: 50%;
-  left: calc(100% + 5px);
+  left: calc(100% + 0.3125rem);
   transform: translate(.5em, -50%);
 }
 
