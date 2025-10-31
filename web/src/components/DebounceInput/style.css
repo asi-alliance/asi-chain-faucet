@@ -1,15 +1,15 @@
 .debounce-input-container {
-    margin-bottom: 15px;
+    margin-bottom: 0.9375rem;
 }
 
 .input-holder {
-    margin-bottom: 5px;
-    height: 50px;
+    margin-bottom: 0.3125rem;
+    height: 3.125rem;
 }
 
 .helper-text {
-    font-size: 14px;
-    padding: 0 10px;
+    font-size: 0.875rem;
+    padding: 0 0.625rem;
     opacity: .6;
 }
 

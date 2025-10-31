@@ -5,23 +5,23 @@
 }
 
 .balance-icon {
-    width: 50px;
-    height: 50px;
+    width: 3.125rem;
+    height: 3.125rem;
     background: var(--primary-color);
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 8px;
-    margin-right: 10px;
+    border-radius: 0.5rem;
+    margin-right: 0.625rem;
 }
 
 .balance-title {
     font-weight: 600;
-    font-size: 14px;
-    margin-bottom: 2px;
+    font-size: 0.875rem;
+    margin-bottom: 0.125rem;
 }
 
 .balance-value {
-    font-size: 14px;
+    font-size: 0.875rem;
     opacity: .7;
 }
