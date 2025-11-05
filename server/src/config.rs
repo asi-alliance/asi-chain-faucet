@@ -11,9 +11,9 @@ pub struct AppConfig {
 
     pub node_sockets: Vec<NodeSocket>,
 
-    pub readonly_host: String,
-    pub readonly_grpc_port: u16,
-    pub readonly_http_port: u16,
+    pub observer_host: String,
+    pub observer_grpc_port: u16,
+    pub observer_http_port: u16,
 
     pub server_host: String,
     pub server_port: u16,
@@ -33,9 +33,9 @@ impl AppConfig {
 
             node_sockets: Self::load_node_sockets().unwrap_or_default(),
 
-            readonly_host: env::var("READONLY_HOST").unwrap_or_else(|_| "localhost".to_string()),
-            readonly_grpc_port: Self::parse_env_or("READONLY_GRPC_PORT", 40452),
-            readonly_http_port: Self::parse_env_or("READONLY_HTTP_PORT", 40453),
+            observer_host: env::var("OBSERVER_HOST").unwrap_or_else(|_| "localhost".to_string()),
+            observer_grpc_port: Self::parse_env_or("OBSERVER_GRPC_PORT", 40452),
+            observer_http_port: Self::parse_env_or("OBSERVER_HTTP_PORT", 40453),
 
             server_host: env::var("SERVER_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
             server_port: Self::parse_env_or("SERVER_PORT", 8000),
