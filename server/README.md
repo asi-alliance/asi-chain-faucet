@@ -1,6 +1,6 @@
 # ASI Faucet Backend Server
 
-Rust-based REST API service for distributing test ASI tokens on ASI blockchain. Built with Axum framework and integrated with ASI blockchain nodes through forked F1r3fly node CLI.
+Rust-based REST API service for distributing test ASI tokens on ASI blockchain. Built with Axum framework and integrated with ASI blockchain nodes through the Rust CLI client.
 
 For complete project documentation, see the [main README](../README.md) in the root directory.
 
