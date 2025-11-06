@@ -37,7 +37,7 @@ ASI Chain Faucet is a production-ready service that enables developers and users
 
 The ASI Chain Faucet consists of two main components working together to provide a seamless token distribution experience:
 
-**Backend Server** - A Rust-based REST API service built with Axum that handles token transfers, balance checks, and transaction status queries. The server integrates with ASI blockchain nodes through a forked F1r3fly node CLI, providing reliable interaction with the blockchain network.
+**Backend Server** - A Rust-based REST API service built with Axum that handles token transfers, balance checks, and transaction status queries. The server integrates with ASI blockchain nodes through the Rust CLI client, providing reliable interaction with the blockchain network.
 
 **Frontend Application** - A React-based web interface that allows users to request tokens by entering their ASI address, check their current balance, and track the status of their token transfer transactions in real-time.
 
