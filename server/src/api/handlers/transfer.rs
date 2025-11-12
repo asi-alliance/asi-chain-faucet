@@ -5,7 +5,7 @@ use crate::{
     AppState,
 };
 use axum::{extract::State, http::StatusCode, response::Json, Json as RequestJson};
-use node_cli::commands::validate_rev_address;
+use node_cli::commands::validate_address;
 use tracing::{error, info, warn};
 
 async fn ensure_recipient_balance_below_limit(
@@ -60,7 +60,7 @@ pub async fn transfer_handler(
         request.to_address
     );
 
-    validate_rev_address(&request.to_address).map_err(|e| {
+    validate_address(&request.to_address).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse::validation_error(e.to_string().as_str())),

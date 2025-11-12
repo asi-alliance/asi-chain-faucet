@@ -8,7 +8,7 @@ use axum::{
     http::StatusCode,
     response::Json,
 };
-use node_cli::commands::validate_rev_address;
+use node_cli::commands::validate_address;
 use tracing::{error, info};
 
 pub async fn balance_handler(
@@ -17,7 +17,7 @@ pub async fn balance_handler(
 ) -> ApiResult<BalanceResponse> {
     info!("FAUCET: Balance request received for address: {}", address);
 
-    validate_rev_address(&address).map_err(|e| {
+    validate_address(&address).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse::validation_error(e.to_string().as_str())),

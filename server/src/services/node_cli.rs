@@ -23,18 +23,19 @@ impl NodeCliService {
         let node_socket: &NodeSocket = choose_random_node(&self.config.node_sockets).await?;
 
         let args = &TransferArgs {
+            token: "ASI".to_string(),
             to_address: to_address.to_owned(),
             amount,
             private_key: private_key,
             host: node_socket.host.clone(),
-            port: node_socket.grpc_port,
+            grpc_port: node_socket.grpc_port,
             http_port: node_socket.http_port,
             bigger_phlo: true,
             propose: false,
-            max_wait: 60,
-            check_interval: 5,
-            readonly_host: Some(self.config.readonly_host.clone()),
-            readonly_port: Some(self.config.readonly_grpc_port),
+            max_wait: 60,      // unused
+            check_interval: 5, // unused
+            observer_host: Some(self.config.observer_host.clone()),
+            observer_grpc_port: Some(self.config.observer_grpc_port),
         };
 
         let deploy_id = transfer_deploy(args)
@@ -46,9 +47,10 @@ impl NodeCliService {
 
     pub async fn get_balance(&self, address: &str) -> Result<String> {
         let args = WalletBalanceArgs {
+            token: "ASI".to_string(),
             address: address.to_owned(),
-            host: self.config.readonly_host.clone(),
-            port: self.config.readonly_grpc_port,
+            host: self.config.observer_host.clone(),
+            grpc_port: self.config.observer_grpc_port,
         };
 
         let (balance, _meta) = wallet_balance_command(&args)
@@ -62,18 +64,17 @@ impl NodeCliService {
         let max_wait = self.config.deploy_max_wait_sec;
         let check_interval = self.config.deploy_check_interval_sec;
         let max_attempts = max_wait / check_interval;
-        let readonly_host = self.config.readonly_host.clone();
+        let observer_host = self.config.observer_host.clone();
 
         let args = WaitArgs {
-            private_key: self.config.private_key.clone().unwrap(),
             max_attempts,
             check_interval: check_interval as u64,
-            http_args: HttpArgs {
-                host: readonly_host.clone(),
-                port: self.config.readonly_http_port,
+            http_node_args: HttpArgs {
+                host: observer_host.clone(),
+                http_port: self.config.observer_http_port,
             },
-            readonly_host: readonly_host,
-            readonly_grpc_port: self.config.readonly_grpc_port,
+            observer_host: observer_host,
+            observer_grpc_port: self.config.observer_grpc_port,
         };
 
         let deploy_info = check_deploy_status(id.clone(), &args)

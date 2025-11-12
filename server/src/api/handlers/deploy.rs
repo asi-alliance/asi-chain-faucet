@@ -12,6 +12,7 @@ use axum::{
 use node_cli::utils::output::DeployCompressedInfo;
 use tracing::{error, info};
 
+#[axum::debug_handler]
 pub async fn deploy_info_handler(
     State(state): State<AppState>,
     Path(deploy_id): Path<String>,
