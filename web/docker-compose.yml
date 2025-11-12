@@ -1,0 +1,8 @@
+services:
+  asi-chain-faucet:
+    build:
+      context: .
+    container_name: asi-chain-faucet
+    ports:
+      - "3000:80"
+    restart: unless-stopped
