@@ -1,6 +1,0 @@
-FROM rust:1.77
-WORKDIR /usr/src/app
-COPY . .
-ENV SERVER_PORT=40470
-EXPOSE $SERVER_PORT
-RUN cargo run
