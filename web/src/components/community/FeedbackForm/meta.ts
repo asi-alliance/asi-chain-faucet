@@ -1,0 +1,16 @@
+import { FEEDBACK_FORM_URL } from "@utils/config";
+
+const endpoints = {
+    FEEDBACK: FEEDBACK_FORM_URL,
+};
+
+const FEEDBACK_FORM_SOURCE = "ASI_CHAIN_FAUCET";
+const SUCCESS_SCREEN_TIMEOUT = 5000;
+const MINIMUM_FEEDBACK_TEXT_LENGTH = 10;
+
+export {
+    endpoints,
+    FEEDBACK_FORM_SOURCE,
+    SUCCESS_SCREEN_TIMEOUT,
+    MINIMUM_FEEDBACK_TEXT_LENGTH,
+};

@@ -7,7 +7,14 @@ const DEPLOY_ID_MINIMUM_LENGTH: number = 100;
 const DEPLOY_ID_MAXIMUM_LENGTH: number = 160;
 const ADDRESS_ALPHABET_REGEX: RegExp = /^[a-zA-Z0-9]+$/;
 const DEPLOY_ID_ALPHABET_REGEX: RegExp = /^[a-zA-Z0-9]+$/;
-const USER_GUIDE_URL: string = "https://asi-testnet.singularitynet.io/faucet/";
+
+const FEEDBACK_FORM_URL: string = (
+    (import.meta.env.VITE_FEEDBACK_FORM_URL || "").trim() || "http://localhost:3001"
+).replace(/\/+$/, "");
+
+const USER_GUIDE_URL: string = (
+    (import.meta.env.VITE_BASE_URL || "").trim() || "http://localhost:3001"
+).replace(/\/+$/, "");
 
 const BASE_URL: string = (
     (import.meta.env.VITE_BASE_URL || "").trim() || "http://localhost:3001"
@@ -41,6 +48,7 @@ export {
     FAUCET_BALANCE_LIMIT,
     ADDRESS_VALIDATION_CONFIG,
     DEPLOY_ID_VALIDATION_CONFIG,
+    FEEDBACK_FORM_URL,
     USER_GUIDE_URL,
     REV_DECIMALS,
 };
