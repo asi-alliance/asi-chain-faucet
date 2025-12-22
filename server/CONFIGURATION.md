@@ -139,22 +139,22 @@ These variables have default values and can be omitted:
 #### FAUCET_AMOUNT
 
 ```bash
-FAUCET_AMOUNT=10000
+FAUCET_AMOUNT=1000000000000
 ```
 
-**Description:** Amount of ASI tokens to send per transfer request.
+**Description:** Amount of ASI tokens in smallest token unit to send per transfer request.
 
 **Format:** Integer (positive, non-zero)
 
-**Unit:** Smallest token unit (motes). In this implementation, 1 ASI = 10^8 motes (8 decimal places)
+**Unit:** Smallest token unit. In this implementation, 1 ASI = 10^8 (8 decimal places)
 
-**Default:** 10000
+**Default:** 1000000000000
 
 **Validation:** Must be greater than 0
 
 **Example:**
 ```bash
-FAUCET_AMOUNT=10000  # Send 10,000 smallest units per request
+FAUCET_AMOUNT=1000000000000  # Send 10,000 ASI per request
 ```
 
 ---
@@ -162,26 +162,22 @@ FAUCET_AMOUNT=10000  # Send 10,000 smallest units per request
 #### FAUCET_MAX_BALANCE
 
 ```bash
-FAUCET_MAX_BALANCE=20000
+FAUCET_MAX_BALANCE=2000000000000
 ```
 
-**Description:** Maximum balance (in ASI) a recipient can have to be eligible for faucet tokens.
+**Description:** Maximum balance (in ASI smallest token unit) a recipient can have to be eligible for faucet tokens.
 
 **Format:** Integer (positive)
 
-**Unit:** ASI tokens (not smallest unit)
+**Unit:** Smallest token unit. In this implementation, 1 ASI = 10^8 (8 decimal places)
 
-**Default:** 20000
+**Default:** 2000000000000
 
 **Purpose:** Prevents abuse by limiting how many times the same address can receive tokens
 
-**Calculation:** Balance is converted to smallest unit (motes) before comparison: `max_balance_allowed = FAUCET_MAX_BALANCE * 10^8`
-
-**Important:** The backend uses a hardcoded conversion factor of 10^8 (not configurable). This means the token has 8 decimal places in the backend logic.
-
 **Example:**
 ```bash
-FAUCET_MAX_BALANCE=20000  # Addresses with 20,000+ ASI are ineligible
+FAUCET_MAX_BALANCE=2000000000000  # Addresses with 20,000+ ASI are ineligible
 ```
 
 ---
@@ -372,7 +368,7 @@ let max_balance_allowed: u128 = state.config.faucet_max_balance as u128 * 10u128
 ```
 
 This means:
-- 1 ASI token = 10^8 motes (smallest unit)
+- 1 ASI token = 10^8 (in smallest unit)
 - The token effectively has **8 decimal places**
 - This value is **not configurable** via environment variables
 
@@ -404,8 +400,8 @@ Create a `.env` file in the `server/` directory:
 
 ```bash
 # Faucet Configuration
-FAUCET_AMOUNT=10000
-FAUCET_MAX_BALANCE=20000
+FAUCET_AMOUNT=1000000000000
+FAUCET_MAX_BALANCE=2000000000000
 PRIVATE_KEY=<your_private_key>
 
 # Validator Nodes

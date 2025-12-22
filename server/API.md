@@ -169,7 +169,7 @@ GET /balance/11114GuXVLzHJqUqDUJGLJJsn8c1ASIhztKZtG1KN1jV48XPBUdVzKBD3R HTTP/1.1
 
 | Field | Type | Description |
 |-------|------|-------------|
-| balance | string | Balance in smallest unit (motes). In this implementation, 1 ASI = 10^8 motes (8 decimal places) |
+| balance | string | Balance in smallest unit. In this implementation, 1 ASI = 10^8 (8 decimal places) |
 
 **Error Responses:**
 
@@ -195,7 +195,7 @@ Query failed (400 Bad Request):
 - Uses `wallet_balance_command` from node_cli
 - Connects to read-only observer node via gRPC (port 40452)
 - Returns raw balance string without conversion
-- Balance is returned in the smallest unit (motes)
+- Balance is returned in the smallest unit 
 - Backend uses 10^8 as the conversion factor for balance calculations
 - Frontend should use `VITE_TOKEN_DECIMALS=8` to correctly display balances
 
