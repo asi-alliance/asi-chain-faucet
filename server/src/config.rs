@@ -27,8 +27,8 @@ impl AppConfig {
         dotenv::dotenv().ok();
 
         Self {
-            faucet_amount: Self::parse_env_or("FAUCET_AMOUNT", 10000),
-            faucet_max_balance: Self::parse_env_or("FAUCET_MAX_BALANCE", 20000),
+            faucet_amount: Self::parse_env_or("FAUCET_AMOUNT", 1000000000000),
+            faucet_max_balance: Self::parse_env_or("FAUCET_MAX_BALANCE", 2000000000000),
             private_key: env::var("PRIVATE_KEY").ok(),
 
             node_sockets: Self::load_node_sockets().unwrap_or_default(),

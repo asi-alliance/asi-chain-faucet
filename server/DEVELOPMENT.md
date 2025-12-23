@@ -96,8 +96,8 @@ Create a `.env` file with development-specific settings:
 
 ```bash
 # Development Configuration
-FAUCET_AMOUNT=100000
-FAUCET_MAX_BALANCE=50000
+FAUCET_AMOUNT=10000000000000
+FAUCET_MAX_BALANCE=5000000000000
 PRIVATE_KEY=<dev_private_key>
 
 # Local or testnet nodes
