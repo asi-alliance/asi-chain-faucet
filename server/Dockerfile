@@ -3,12 +3,12 @@ FROM rust:slim-bookworm AS builder
 WORKDIR /build
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    libprotobuf-dev \
+    libssl-dev \
     make \
     perl \
-    protobuf-compiler \
-    libprotobuf-dev \
     pkg-config \
-    libssl-dev \
+    protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 COPY . .
 RUN cargo build --release
