@@ -29,7 +29,8 @@ ASI Chain Faucet is a production-ready service that enables developers and users
 4. [Project Structure](#project-structure)
 5. [Architecture](#architecture)
 6. [Documentation](#documentation)
-7. [License](#license)
+7. [Contributing](#contributing)
+8. [License](#license)
 
 ---
 
