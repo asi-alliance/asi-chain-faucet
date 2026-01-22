@@ -8,6 +8,7 @@ import {
     MINIMUM_FEEDBACK_TEXT_LENGTH,
 } from "./meta";
 import "./style.css";
+import { getCaptchaFetch } from "@utils/captchaFetch";
 
 enum FeedbackCategory {
     QUESTION = "question",
@@ -35,9 +36,12 @@ const initialFormFields: TFormFields = {
 const FeedbackForm = (): ReactElement => {
     const [isRequestHandling, setIsRequestHandling] = useState(false);
     const [isRequestSent, setIsRequestSent] = useState(false);
+    const [isRequestErrored, setIsRequestErrored] = useState(false);
     const [isFormDisplayed, setIsFormDisplayed] = useState(false);
     const [formFields, setFormFields] =
         useState<TFormFields>(initialFormFields);
+
+    const captchaFetch = getCaptchaFetch();
 
     const options: OptionType[] = [
         { value: FeedbackCategory.QUESTION, title: "Question" },
@@ -88,6 +92,16 @@ const FeedbackForm = (): ReactElement => {
         setIsRequestSent(false);
     };
 
+    const showError = async () => {
+        setIsRequestErrored(true);
+
+        await new Promise((resolve) =>
+            setTimeout(resolve, SUCCESS_SCREEN_TIMEOUT)
+        );
+
+        setIsRequestErrored(false);
+    };
+
     const sendFeedback = async () => {
         if (isRequestHandling) {
             return;
@@ -96,7 +110,7 @@ const FeedbackForm = (): ReactElement => {
         try {
             setIsRequestHandling(true);
 
-            const response = await fetch(endpoints.FEEDBACK, {
+            const response = await captchaFetch(endpoints.FEEDBACK, {
                 method: "POST",
                 mode: "cors",
                 headers: {
@@ -125,8 +139,8 @@ const FeedbackForm = (): ReactElement => {
             await showAlert();
         } catch (error) {
             console.error("Error on feedback request:", error);
-
             setIsFormDisplayed(false);
+            await showError();
         } finally {
             resetForm();
 
@@ -136,6 +150,7 @@ const FeedbackForm = (): ReactElement => {
 
     return (
         <div className="feedback-form-holder">
+            <div id="captcha-modal-container" />
             <div
                 className={`feedback-form ${!isFormDisplayed ? "hidden" : ""}`}
             >
@@ -196,7 +211,7 @@ const FeedbackForm = (): ReactElement => {
                                 onChange={handleInputChange}
                                 className={
                                     formFields.email &&
-                                    !isEmailValid(formFields.email)
+                                        !isEmailValid(formFields.email)
                                         ? "error-field"
                                         : ""
                                 }
@@ -215,9 +230,8 @@ const FeedbackForm = (): ReactElement => {
                         </div>
                     </fieldset>
                     <div
-                        className={`submit-btn-container ${
-                            isSubmitAvailable ? "gradient-border" : ""
-                        }`}
+                        className={`submit-btn-container ${isSubmitAvailable ? "gradient-border" : ""
+                            }`}
                     >
                         <button
                             className="submit-button"
@@ -238,10 +252,12 @@ const FeedbackForm = (): ReactElement => {
                 Thank you! Our technical support will get in touch with you
                 soon!
             </div>
+            <div className={`error-alert ${!isRequestErrored ? "hidden" : ""}`}>
+                Something went wrong! Please, try again later
+            </div>
             <div
-                className={`feedback-form-launcher ${
-                    isFormDisplayed ? "hidden" : ""
-                }`}
+                className={`feedback-form-launcher ${isFormDisplayed ? "hidden" : ""
+                    }`}
             >
                 <button onClick={toggleFormVisibility} type="button">
                     <img src={FeedbackFormTriggerIcon} alt="feedback" />
