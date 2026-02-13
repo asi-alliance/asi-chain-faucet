@@ -8,6 +8,7 @@ import {
     MINIMUM_FEEDBACK_TEXT_LENGTH,
 } from "./meta";
 import "./style.css";
+import { getCaptchaFetch } from "@utils/captchaFetch";
 
 enum FeedbackCategory {
     QUESTION = "question",
@@ -39,6 +40,7 @@ const FeedbackForm = (): ReactElement => {
     const [isFormDisplayed, setIsFormDisplayed] = useState(false);
     const [formFields, setFormFields] =
         useState<TFormFields>(initialFormFields);
+    const captchaFetch = getCaptchaFetch();
 
     const options: OptionType[] = [
         { value: FeedbackCategory.QUESTION, title: "Question" },
@@ -107,7 +109,7 @@ const FeedbackForm = (): ReactElement => {
         try {
             setIsRequestHandling(true);
 
-            const response = await fetch(endpoints.FEEDBACK, {
+            const response = await captchaFetch(endpoints.FEEDBACK, {
                 method: "POST",
                 mode: "cors",
                 headers: {
