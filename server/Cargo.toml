@@ -2,7 +2,7 @@
 name = "asi-faucet"
 version = "0.1.0"
 edition = "2021"
-description = "A service for transferring REV tokens on the ASI blockchain"
+description = "A service for transferring ASI tokens on the ASI Chain"
 
 [dependencies]
 # Async runtime

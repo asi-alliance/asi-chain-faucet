@@ -5,7 +5,7 @@ use crate::{
     AppState,
 };
 use axum::{extract::State, http::StatusCode, response::Json, Json as RequestJson};
-use node_cli::commands::validate_address;
+use node_cli::vault::validate_address;
 use tracing::{error, info, warn};
 
 async fn ensure_recipient_balance_below_limit(

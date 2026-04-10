@@ -34,7 +34,7 @@ For complete project documentation, see the [main README](../README.md) in the r
 
    Keep `rust-client` submodule up-to-dated by running:
    ```bash
-   git submodule update --init --remote -- server/rust-client 
+   git submodule update --init --remote -- rust-client 
    ```
 
 2. **Configure environment:**

@@ -23,7 +23,6 @@ impl NodeCliService {
         let node_socket: &NodeSocket = choose_random_node(&self.config.node_sockets).await?;
 
         let args = &TransferArgs {
-            token: "ASI".to_string(),
             to_address: to_address.to_owned(),
             amount,
             private_key: private_key,
@@ -36,6 +35,8 @@ impl NodeCliService {
             check_interval: 5, // unused
             observer_host: Some(self.config.observer_host.clone()),
             observer_grpc_port: Some(self.config.observer_grpc_port),
+            expires_in: Some(30 * 60), // 30 minutes
+            expiration: None,
         };
 
         let deploy_id = transfer_deploy(args)
@@ -47,7 +48,6 @@ impl NodeCliService {
 
     pub async fn get_balance(&self, address: &str) -> Result<String> {
         let args = WalletBalanceArgs {
-            token: "ASI".to_string(),
             address: address.to_owned(),
             host: self.config.observer_host.clone(),
             grpc_port: self.config.observer_grpc_port,

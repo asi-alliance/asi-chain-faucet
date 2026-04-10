@@ -8,7 +8,7 @@ use axum::{
     http::StatusCode,
     response::Json,
 };
-use node_cli::commands::validate_address;
+use node_cli::vault::validate_address;
 use tracing::{error, info};
 
 pub async fn balance_handler(
