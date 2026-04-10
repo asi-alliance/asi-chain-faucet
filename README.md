@@ -29,7 +29,8 @@ ASI Chain Faucet is a production-ready service that enables developers and users
 4. [Project Structure](#project-structure)
 5. [Architecture](#architecture)
 6. [Documentation](#documentation)
-7. [License](#license)
+7. [Contributing](#contributing)
+8. [License](#license)
 
 ---
 
@@ -253,6 +254,13 @@ See [server/Cargo.toml](server/Cargo.toml) and [web/package.json](web/package.js
 
 - **[ASI Alliance Documentation](https://docs.asichain.io)** - General ASI blockchain documentation
 - **[GitHub Repository](https://github.com/asi-alliance/asi-chain-faucet)** - Source code and issue tracking
+
+---
+
+## Contributing
+
+Known issues and bugs are tracked in the [Issues](https://github.com/asi-alliance/asi-chain-faucet/issues) section.  
+If you encounter a problem that is not listed, please feel free to open a new issue and provide as much detail as possible.
 
 ---
 

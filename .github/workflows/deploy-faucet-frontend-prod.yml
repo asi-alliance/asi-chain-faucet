@@ -1,7 +1,7 @@
 name: Prod Faucet Frontend Deployment
 
 on:
-  push:
+  #push:
     # branches:
     #   - dev
   workflow_dispatch:
