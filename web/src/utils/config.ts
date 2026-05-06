@@ -13,7 +13,7 @@ const FEEDBACK_FORM_URL: string = (
 ).replace(/\/+$/, "");
 
 const USER_GUIDE_URL: string = (
-    (import.meta.env.VITE_BASE_URL || "").trim() || "http://localhost:3001"
+    (import.meta.env.VITE_USER_GUIDE_URL || "").trim() || "https://docs.asichain.io/faucet/usage"
 ).replace(/\/+$/, "");
 
 const BASE_URL: string = (
