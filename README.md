@@ -96,6 +96,7 @@ npm install
 # Configure environment
 # Create .env file with:
 # VITE_BASE_URL=http://localhost:40470  # Default is http://localhost:3001 if not set
+# VITE_USER_GUIDE_URL=https://docs.asichain.io/faucet/usage  # User guide link opened from the help icon
 # VITE_FAUCET_BALANCE_LIMIT=20000
 # VITE_TOKEN_DECIMALS=8
 
