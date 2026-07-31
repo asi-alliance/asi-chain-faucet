@@ -31,11 +31,11 @@ const REV_DECIMALS: number = Number(
 );
 
 const parsedMaxPollsMinutes: number = Number(
-    (import.meta.env.VITE_MAX_POLLS_MINUTES_COUNT || "").trim() || "7",
+    (import.meta.env.VITE_MAX_POLLS_MINUTES_COUNT || "").trim() || "15",
 );
 
 const MAX_POLLS_MINUTES_COUNT: number =
-    parsedMaxPollsMinutes > 0 ? parsedMaxPollsMinutes : 7;
+    parsedMaxPollsMinutes > 0 ? parsedMaxPollsMinutes : 15;
 
 const ADDRESS_VALIDATION_CONFIG: IInputWithValidationConfig = {
     shouldStartWith: ADDRESS_START_STRING,
