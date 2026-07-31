@@ -99,6 +99,7 @@ npm install
 # VITE_USER_GUIDE_URL=https://docs.asichain.io/faucet/usage  # User guide link opened from the help icon
 # VITE_FAUCET_BALANCE_LIMIT=20000
 # VITE_TOKEN_DECIMALS=8
+# VITE_MAX_POLLS_MINUTES_COUNT=15  # How long the UI polls transfer status before giving up, in minutes (default is 7)
 
 # Start development server
 npm run dev
