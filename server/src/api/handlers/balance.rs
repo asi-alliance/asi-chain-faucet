@@ -20,7 +20,7 @@ pub async fn balance_handler(
     validate_address(&address).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::validation_error(e.to_string().as_str())),
+            Json(ErrorResponse::validation_error(e.as_str())),
         )
     })?;
 
@@ -31,7 +31,7 @@ pub async fn balance_handler(
                 "FAUCET: Balance retrieval successful for {}: {}",
                 address, balance
             );
-            Ok(Json(BalanceResponse { balance: balance }))
+            Ok(Json(BalanceResponse { balance }))
         }
         Err(e) => {
             error!("FAUCET: Balance retrieval failed: {}", e);

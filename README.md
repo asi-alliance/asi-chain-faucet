@@ -38,7 +38,7 @@ ASI Chain Faucet is a production-ready service that enables developers and users
 
 The ASI Chain Faucet consists of two main components working together to provide a seamless token distribution experience:
 
-**Backend Server** - A Rust-based REST API service built with Axum that handles token transfers, balance checks, and transaction status queries. The server integrates with ASI blockchain nodes through the Rust CLI client, providing reliable interaction with the blockchain network.
+**Backend Server** - A Rust-based REST API service built with Axum that handles token transfers, balance checks, and transaction status queries. The server interacts directly with ASI blockchain nodes via HTTP and gRPC APIs, providing reliable interaction with the blockchain network.
 
 **Frontend Application** - A React-based web interface that allows users to request tokens by entering their ASI address, check their current balance, and track the status of their token transfer transactions in real-time.
 
@@ -71,9 +71,14 @@ The ASI Chain Faucet consists of two main components working together to provide
 ### Running the Backend
 
 ```bash
-# Clone with submodules
-git clone --recursive https://github.com/asi-alliance/asi-chain-faucet.git
-cd asi-chain-faucet/server
+# Clone the repository
+git clone https://github.com/asi-alliance/asi-chain-faucet.git
+cd asi-chain-faucet
+
+# Initialize and update submodules
+git submodule update --init --recursive
+
+cd server
 
 # Configure environment
 cp .env.example .env
@@ -117,9 +122,11 @@ asi-chain-faucet/
 │   │   ├── api/               # API layer (handlers, models, router)
 │   │   ├── core/              # Application core
 │   │   ├── services/          # Business logic (blockchain interaction)
+│   │   ├── crypto.rs          # Cryptographic operations (keys, vault addresses)
+│   │   ├── vault.rs           # Vault transfer Rholang templates
+│   │   ├── http_client.rs     # Direct HTTP client for node API
 │   │   ├── config.rs          # Configuration management
 │   │   └── main.rs            # Application entry point
-│   ├── rust-client/           # Forked F1r3fly node CLI (submodule)
 │   ├── Cargo.toml             # Rust dependencies
 │   ├── Dockerfile             # Backend container image
 │   ├── docker-compose.yml     # Backend deployment
@@ -205,10 +212,11 @@ asi-chain-faucet/
 
 **Backend:**
 - Rust 1.77 - Systems programming language
-- Axum 0.7 - Modern async web framework
+- Axum 0.8 - Modern async web framework
 - Tokio 1.0 - Asynchronous runtime
 - Tower-HTTP 0.5 - HTTP middleware
-- node_cli - Forked F1r3fly CLI for blockchain interaction
+- secp256k1 + blake2 - Cryptographic signing
+- f1r3fly-models - Protobuf types for deploy signing
 
 **Frontend:**
 - React 19.1 - UI framework

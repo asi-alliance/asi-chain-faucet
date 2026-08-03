@@ -19,6 +19,13 @@ pub struct BalanceResponse {
 }
 
 #[derive(Debug, Serialize)]
+pub struct DeployStatusResponse {
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub msg: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct ErrorResponse {
     pub error: String,
     pub details: Option<String>,

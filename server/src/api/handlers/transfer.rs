@@ -63,7 +63,7 @@ pub async fn transfer_handler(
     validate_address(&request.to_address).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::validation_error(e.to_string().as_str())),
+            Json(ErrorResponse::validation_error(e.as_str())),
         )
     })?;
 
@@ -73,7 +73,7 @@ pub async fn transfer_handler(
 
     let node_cli_service = NodeCliService::new(state.config.clone());
     match node_cli_service
-        .transfer_funds(&request.to_address, private_key)
+        .transfer_funds(&request.to_address, &private_key)
         .await
     {
         Ok(deploy_id) => {

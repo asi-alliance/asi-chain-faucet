@@ -21,8 +21,6 @@ const enum FaucetPhases {
 enum DeployStatuses {
     DEPLOYING = "Deploying",
     FINALIZED = "Finalized",
-    FINALIZING = "Finalizing",
-    FINALIZATION_ERROR = "FinalizationError",
     DEPLOY_ERROR = "DeployError",
     UNKNOWN = "Unknown",
 }
