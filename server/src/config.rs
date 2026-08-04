@@ -20,6 +20,7 @@ pub struct AppConfig {
 
     pub deploy_max_wait_sec: u32,
     pub deploy_check_interval_sec: u32,
+    pub deploy_phlo_limit: i64,
 }
 
 impl AppConfig {
@@ -42,6 +43,7 @@ impl AppConfig {
 
             deploy_max_wait_sec: Self::parse_env_or("DEPLOY_MAX_WAIT_SEC", 6),
             deploy_check_interval_sec: Self::parse_env_or("DEPLOY_CHECK_INTERVAL_SEC", 2),
+            deploy_phlo_limit: Self::parse_env_or("DEPLOY_PHLO_LIMIT", 500_000),
         }
     }
 

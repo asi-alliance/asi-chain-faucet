@@ -243,13 +243,6 @@ GET /deploy/d1f2e3b4a5c6789012345678901234567890abcdef1234567890abcdef12 HTTP/1.
 }
 ```
 
-**Status: Finalizing**
-```json
-{
-  "status": "Finalizing"
-}
-```
-
 **Status: DeployError**
 ```json
 {
@@ -258,13 +251,6 @@ GET /deploy/d1f2e3b4a5c6789012345678901234567890abcdef1234567890abcdef12 HTTP/1.
 }
 ```
 
-**Status: FinalizationError**
-```json
-{
-  "status": "FinalizationError",
-  "msg": "Block finalization failed"
-}
-```
 
 **Response Fields:**
 
@@ -278,11 +264,9 @@ GET /deploy/d1f2e3b4a5c6789012345678901234567890abcdef1234567890abcdef12 HTTP/1.
 
 | Status | Description |
 |--------|-------------|
-| Deploying | Transaction submitted, waiting for inclusion in block |
-| Finalizing | Transaction included in block, waiting for finalization |
+| Deploying | Transaction submitted, waiting for inclusion in block and finalization |
 | Finalized | Transaction successfully finalized in block |
 | DeployError | Error during transaction deployment |
-| FinalizationError | Error during block finalization |
 
 **Error Responses:**
 

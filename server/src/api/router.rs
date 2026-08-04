@@ -33,10 +33,13 @@ pub fn create_router(state: AppState) -> Router {
     let api_routes = Router::new()
         .route("/transfer", post(transfer_handler).options(preflight))
         .route(
-            "/deploy/:deploy_id",
+            "/deploy/{deploy_id}",
             get(deploy_info_handler).options(preflight),
         )
-        .route("/balance/:address", get(balance_handler).options(preflight));
+        .route(
+            "/balance/{address}",
+            get(balance_handler).options(preflight),
+        );
 
     api_routes
         .layer(cors)

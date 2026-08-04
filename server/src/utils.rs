@@ -1,16 +1,16 @@
 use anyhow::{bail, Result};
 use rand::{rng, seq::SliceRandom};
 use reqwest::Client;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct NodeSocket {
     pub host: String,
     pub grpc_port: u16,
     pub http_port: u16,
 }
 
-// simple validation, proper research needed
 pub fn validate_deploy_id(deploy_id: &str) -> bool {
     let len = deploy_id.len();
     if len < 100 || len > 160 {
@@ -19,10 +19,23 @@ pub fn validate_deploy_id(deploy_id: &str) -> bool {
     deploy_id.chars().all(|c| c.is_ascii_alphanumeric())
 }
 
+#[derive(Deserialize)]
+struct NodeStatusInterface {
+    #[serde(rename = "isReady")]
+    is_ready: bool,
+}
+
 async fn is_node_available(client: &Client, node: &NodeSocket) -> bool {
-    let url = format!("http://{}:{}/status", node.host, node.http_port);
+    let url = format!("http://{}:{}/api/status", node.host, node.http_port);
     match client.get(&url).send().await {
-        Ok(resp) => resp.status().is_success(),
+        Ok(resp) => {
+            if resp.status().is_success() {
+                if let Ok(status) = resp.json::<NodeStatusInterface>().await {
+                    return status.is_ready;
+                }
+            }
+            false
+        }
         Err(_) => false,
     }
 }
@@ -32,7 +45,7 @@ pub async fn choose_random_node(nodes: &[NodeSocket]) -> Result<&NodeSocket> {
         bail!("No available node sockets");
     }
 
-    let client = Client::builder().timeout(Duration::from_secs(2)).build()?;
+    let client = Client::builder().timeout(Duration::from_secs(5)).build()?;
 
     let mut indices: Vec<usize> = (0..nodes.len()).collect();
     indices.shuffle(&mut rng());

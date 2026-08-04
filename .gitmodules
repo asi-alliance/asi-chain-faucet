@@ -1,4 +1,4 @@
 [submodule "rust-client"]
 	path = server/rust-client
-	url = https://github.com/singnet/rust-client.git
-	branch = asi-main
+	url = https://github.com/F1R3FLY-io/rust-client.git
+	tag = v0.2.5

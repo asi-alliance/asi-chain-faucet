@@ -82,7 +82,7 @@ PRIVATE_KEY=<your_test_private_key>
 NODE_HOSTS=["<your_testnet_node_host>"]
 NODE_GRPC_PORTS=[<your_node_grpc_port>]
 NODE_HTTP_PORTS=[<your_node_http_port>]
-READONLY_HOST=<your_readonly_host>
+OBSERVER_HOST=<your_observer_host>
 RUST_LOG=asi_faucet=debug,tower_http=debug
 ```
 
@@ -104,9 +104,9 @@ PRIVATE_KEY=<dev_private_key>
 NODE_HOSTS=["<your_node_host>"]  # Host without port (e.g., "192.168.1.1" or "node.example.com")
 NODE_GRPC_PORTS=[<your_node_grpc_port>]
 NODE_HTTP_PORTS=[<your_node_http_port>]
-READONLY_HOST=localhost
-READONLY_GRPC_PORT=40452
-READONLY_HTTP_PORT=40453
+OBSERVER_HOST=localhost
+OBSERVER_GRPC_PORT=40452
+OBSERVER_HTTP_PORT=40453
 
 # Development server settings
 SERVER_HOST=127.0.0.1
@@ -181,7 +181,10 @@ curl -X POST http://localhost:40470/transfer \
 src/
 ├── main.rs              # Entry point, logging setup
 ├── config.rs            # Configuration loading and validation
-├── utils.rs             # Utility functions
+├── utils.rs             # Node selection, validation
+├── crypto.rs            # Key handling, vault address generation
+├── vault.rs             # Vault transfer Rholang templates
+├── http_client.rs       # Direct HTTP client for node API
 │
 ├── core/                # Application core
 │   ├── mod.rs
@@ -202,7 +205,7 @@ src/
 │
 └── services/            # Business logic
     ├── mod.rs
-    └── node_cli.rs      # Blockchain interaction
+    └── node_cli.rs      # Blockchain interaction service
 ```
 
 ### Adding New Endpoints

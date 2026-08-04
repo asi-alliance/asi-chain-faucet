@@ -1,6 +1,6 @@
 # ASI Faucet Backend Server
 
-Rust-based REST API service for distributing test ASI tokens on ASI blockchain. Built with Axum framework and integrated with ASI blockchain nodes through the Rust CLI client.
+Rust-based REST API service for distributing test ASI tokens on ASI blockchain. Built with Axum framework and interacts directly with ASI blockchain nodes via HTTP and gRPC APIs.
 
 For complete project documentation, see the [main README](../README.md) in the root directory.
 
@@ -21,7 +21,6 @@ For complete project documentation, see the [main README](../README.md) in the r
 
 - Rust 1.77 or higher
 - Protocol Buffers Compiler: `apt install protobuf-compiler`
-- Make and Perl: `apt install make perl`
 
 ### Setup
 
@@ -62,7 +61,10 @@ The server starts on `http://0.0.0.0:40470` by default (from .env.example).
 src/
 ├── main.rs              # Entry point, logging setup
 ├── config.rs            # Configuration management
-├── utils.rs             # Utility functions
+├── utils.rs             # Node selection, validation
+├── crypto.rs            # Key handling, vault address generation
+├── vault.rs             # Vault transfer Rholang templates
+├── http_client.rs       # Direct HTTP client for node API
 │
 ├── core/                # Application core
 │   ├── mod.rs
@@ -81,7 +83,7 @@ src/
 │
 └── services/            # Business logic
     ├── mod.rs
-    └── node_cli.rs      # Blockchain interaction
+    └── node_cli.rs      # Blockchain interaction service
 ```
 
 ### Request Flow
@@ -97,12 +99,13 @@ src/
 - Multiple nodes for load balancing
 - Random selection per request
 - Configured via NODE_HOSTS, NODE_GRPC_PORTS, NODE_HTTP_PORTS
+- Deploy submission via `POST /api/deploy` (HTTP)
 
 **Read-Only Observer Node** (read operations):
 - Balance queries and status checks
-- Default gRPC port: 40452, HTTP port: 40453
-- Configured via READONLY_HOST, READONLY_GRPC_PORT, READONLY_HTTP_PORT
-- Consistent read performance
+- Default HTTP port: 40453
+- Configured via OBSERVER_HOST, OBSERVER_HTTP_PORT
+- Deploy status via `GET /api/deploy-finalization-status/{id}` (HTTP)
 
 ---
 
@@ -127,9 +130,9 @@ PRIVATE_KEY=<required>
 NODE_HOSTS=["192.168.1.10","192.168.1.11"]  # IP/hostname without port
 NODE_GRPC_PORTS=[40412,40422]
 NODE_HTTP_PORTS=[40413,40423]
-READONLY_HOST=localhost        # default: localhost
-READONLY_GRPC_PORT=40452       # default: 40452
-READONLY_HTTP_PORT=40453       # default: 40453
+OBSERVER_HOST=localhost        # default: localhost
+OBSERVER_GRPC_PORT=40452
+OBSERVER_HTTP_PORT=40453       # default: 40453
 ```
 
 **Important:** The backend uses 10^8 as the token decimal conversion factor (hardcoded). Frontend should use `VITE_TOKEN_DECIMALS=8` to match.
