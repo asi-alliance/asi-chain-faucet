@@ -9,11 +9,13 @@ const ADDRESS_ALPHABET_REGEX: RegExp = /^[a-zA-Z0-9]+$/;
 const DEPLOY_ID_ALPHABET_REGEX: RegExp = /^[a-zA-Z0-9]+$/;
 
 const FEEDBACK_FORM_URL: string = (
-    (import.meta.env.VITE_FEEDBACK_FORM_URL || "").trim() || "http://localhost:3001"
+    (import.meta.env.VITE_FEEDBACK_FORM_URL || "").trim() ||
+    "http://localhost:3001"
 ).replace(/\/+$/, "");
 
 const USER_GUIDE_URL: string = (
-    (import.meta.env.VITE_USER_GUIDE_URL || "").trim() || "https://docs.asichain.io/faucet/usage"
+    (import.meta.env.VITE_USER_GUIDE_URL || "").trim() ||
+    "https://docs.asichain.io/faucet/usage"
 ).replace(/\/+$/, "");
 
 const BASE_URL: string = (
@@ -21,12 +23,19 @@ const BASE_URL: string = (
 ).replace(/\/+$/, "");
 
 const FAUCET_BALANCE_LIMIT: number = Number(
-    (import.meta.env.VITE_FAUCET_BALANCE_LIMIT || "").trim() || "20000"
+    (import.meta.env.VITE_FAUCET_BALANCE_LIMIT || "").trim() || "20000",
 );
 
 const REV_DECIMALS: number = Number(
-    (import.meta.env.VITE_TOKEN_DECIMALS || "").trim() || "9"
+    (import.meta.env.VITE_TOKEN_DECIMALS || "").trim() || "9",
 );
+
+const parsedMaxPollsMinutes: number = Number(
+    (import.meta.env.VITE_MAX_POLLS_MINUTES_COUNT || "").trim() || "15",
+);
+
+const MAX_POLLS_MINUTES_COUNT: number =
+    parsedMaxPollsMinutes > 0 ? parsedMaxPollsMinutes : 15;
 
 const ADDRESS_VALIDATION_CONFIG: IInputWithValidationConfig = {
     shouldStartWith: ADDRESS_START_STRING,
@@ -51,4 +60,5 @@ export {
     FEEDBACK_FORM_URL,
     USER_GUIDE_URL,
     REV_DECIMALS,
+    MAX_POLLS_MINUTES_COUNT,
 };
