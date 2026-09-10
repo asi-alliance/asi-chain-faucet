@@ -69,9 +69,15 @@ pub async fn transfer_handler(
 
     ensure_recipient_balance_below_limit(&state, &request.to_address).await?;
 
-    let private_key = state.config.private_key.clone().unwrap();
+    let private_key = state
+        .config
+        .private_key
+        .as_ref()
+        .expect("PRIVATE_KEY presence is validated at startup")
+        .expose()
+        .to_string();
 
-    let node_cli_service = NodeCliService::new(state.config.clone());
+    let node_cli_service = NodeCliService::new(state.config.clone(), state.alerts.clone());
     match node_cli_service
         .transfer_funds(&request.to_address, &private_key)
         .await

@@ -52,6 +52,7 @@ The ASI Chain Faucet consists of two main components working together to provide
 - **Address Validation** - Validates ASI address format before processing requests
 - **Multi-Node Support** - Load balances requests across multiple validator nodes for reliability
 - **CORS Enabled** - Full CORS support for cross-origin requests from the web interface
+- **Critical Error Alerts** - Optional Mattermost notifications when no validator node is reachable or a transfer deploy fails, with per-event-type throttling
 
 ---
 

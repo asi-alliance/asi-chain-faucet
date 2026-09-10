@@ -1,23 +1,35 @@
 use crate::config::AppConfig;
+use crate::services::alerts::{AlertEvent, AlertKind, AlertService};
 use crate::utils::choose_random_node;
 use anyhow::{Context, Result};
 use node_cli::f1r3fly_api::DeployFinalizationStatus;
 use node_cli::utils::CryptoUtils;
 use node_cli::vault::{build_balance_query, build_transfer_rholang};
 use node_cli::F1r3flyApi;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct NodeCliService {
     config: AppConfig,
+    alerts: Arc<AlertService>,
 }
 
 impl NodeCliService {
-    pub fn new(config: AppConfig) -> Self {
-        Self { config }
+    pub fn new(config: AppConfig, alerts: Arc<AlertService>) -> Self {
+        Self { config, alerts }
     }
 
     pub async fn transfer_funds(&self, to_address: &str, private_key_hex: &str) -> Result<String> {
-        let node = choose_random_node(&self.config.node_sockets).await?;
+        let node = match choose_random_node(&self.config.node_sockets).await {
+            Ok(node) => node,
+            Err(e) => {
+                self.alerts.notify(
+                    AlertEvent::new(AlertKind::NoReachableNodes, e.to_string())
+                        .with_context("nodes", self.config.node_hosts_display.as_ref()),
+                );
+                return Err(e);
+            }
+        };
 
         let api = F1r3flyApi::new(private_key_hex, &node.host, node.grpc_port)
             .map_err(|e| anyhow::anyhow!("Failed to initialise deploy client: {}", e))?;
@@ -37,7 +49,15 @@ impl NodeCliService {
             0,
         )
         .await
-        .map_err(|e| anyhow::anyhow!("Deploy failed: {}", e))
+        .map_err(|e| {
+            self.alerts.notify(
+                AlertEvent::new(AlertKind::TransferDeployFailed, e.to_string())
+                    .with_context("from", from_address.as_str())
+                    .with_context("to", to_address)
+                    .with_context("node", format!("{}:{}", node.host, node.grpc_port)),
+            );
+            anyhow::anyhow!("Deploy failed: {}", e)
+        })
     }
 
     pub async fn get_balance(&self, address: &str) -> Result<String> {

@@ -1,13 +1,15 @@
 use anyhow::{Context, Result};
+use std::sync::Arc;
 use std::time::Instant;
 use tracing::info;
 
-use crate::{api::create_router, config::AppConfig};
+use crate::{api::create_router, config::AppConfig, services::alerts::AlertService};
 
 #[derive(Clone)]
 pub struct AppState {
     pub config: AppConfig,
     pub start_time: Instant,
+    pub alerts: Arc<AlertService>,
 }
 
 pub struct Application {
@@ -21,9 +23,12 @@ impl Application {
             .validate()
             .map_err(|e| anyhow::anyhow!("Configuration error: {}", e))?;
 
+        let alerts = AlertService::new(&config);
+
         let state = AppState {
             config: config.clone(),
             start_time: Instant::now(),
+            alerts,
         };
 
         let router = create_router(state);

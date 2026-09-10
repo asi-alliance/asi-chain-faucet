@@ -133,7 +133,12 @@ NODE_HTTP_PORTS=[40413,40423]
 OBSERVER_HOST=localhost        # default: localhost
 OBSERVER_GRPC_PORT=40452
 OBSERVER_HTTP_PORT=40453       # default: 40453
+ALERTS_ENABLED=false           # default: false
+MATTERMOST_WEBHOOK_URL=        # required when ALERTS_ENABLED=true
+ALERT_ENVIRONMENT=unknown      # environment label shown in alerts
 ```
+
+**Critical error alerts:** with `ALERTS_ENABLED=true`, the server posts to a Mattermost incoming webhook when no validator node is reachable or a transfer deploy fails. Nothing else is alerted. See [CONFIGURATION.md](CONFIGURATION.md#critical-error-alerts) for the full variable list and webhook setup.
 
 **Important:** The backend uses 10^8 as the token decimal conversion factor (hardcoded). Frontend should use `VITE_TOKEN_DECIMALS=8` to match.
 

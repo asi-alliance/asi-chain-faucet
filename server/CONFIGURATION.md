@@ -357,6 +357,112 @@ RUST_LOG=asi_faucet=trace,tower_http=trace
 
 ---
 
+#### ALERTS_ENABLED
+
+```bash
+ALERTS_ENABLED=false
+```
+
+**Description:** Master switch for critical-error alerts posted to a Mattermost channel.
+
+**Default:** `false`
+
+**Notes:** When `false`, the service behaves exactly as before and no outgoing webhook requests are made. When `true`, `MATTERMOST_WEBHOOK_URL` becomes required and the server refuses to start without it.
+
+---
+
+#### MATTERMOST_WEBHOOK_URL
+
+```bash
+MATTERMOST_WEBHOOK_URL=https://mattermost.example.com/hooks/xxxxxxxxxxxxxxxxx
+```
+
+**Description:** Mattermost incoming webhook URL that receives alert messages.
+
+**Default:** none
+
+**Required:** only when `ALERTS_ENABLED=true`
+
+**Notes:** Treated as a secret — it is masked as `***` in debug logs and never included in alert message bodies.
+
+---
+
+#### MATTERMOST_CHANNEL
+
+```bash
+MATTERMOST_CHANNEL=asi-faucet-alerts
+```
+
+**Description:** Overrides the channel configured on the webhook itself.
+
+**Default:** unset (the webhook's own default channel is used)
+
+---
+
+#### MATTERMOST_USERNAME
+
+```bash
+MATTERMOST_USERNAME=asi-faucet
+```
+
+**Description:** Display name the alert is posted under.
+
+**Default:** `asi-faucet`
+
+---
+
+#### ALERT_THROTTLE_SEC
+
+```bash
+ALERT_THROTTLE_SEC=300
+```
+
+**Description:** Deduplication window, in seconds, applied per event type. Repeats of the same event type inside the window are suppressed; the next message sent after the window reports how many repeats were suppressed.
+
+**Default:** `300`
+
+---
+
+#### ALERT_TIMEOUT_SEC
+
+```bash
+ALERT_TIMEOUT_SEC=5
+```
+
+**Description:** Timeout, in seconds, for a single webhook delivery attempt. Delivery runs off the request path, so this never delays an HTTP response.
+
+**Default:** `5`
+
+---
+
+#### ALERT_ENVIRONMENT
+
+```bash
+ALERT_ENVIRONMENT=staging
+```
+
+**Description:** Environment label shown in the alert header, so messages from different deployments are distinguishable.
+
+**Default:** `unknown`
+
+---
+
+## Critical Error Alerts
+
+When enabled, the service posts a message to a Mattermost channel for two event types only:
+
+| Event | Raised when |
+|-------|-------------|
+| `No reachable nodes` | A transfer request is handled and none of the configured validator nodes reports readiness |
+| `Transfer deploy failed` | The transfer deploy to a validator node returns an error |
+
+Everything else stays in the logs only — balance query failures, deploy status failures, startup and configuration errors, and user validation errors (invalid address, invalid deploy id, balance above the faucet threshold).
+
+Each message carries the environment label, service name, severity, event type, error text, event context (recipient address or the polled node list), the `x-request-id` of the originating request, and a UTC timestamp.
+
+
+---
+
 ## Token Decimals and Frontend Integration
 
 ### Backend Token Decimals
@@ -424,6 +530,15 @@ DEPLOY_CHECK_INTERVAL_SEC=2
 
 # Logging
 RUST_LOG=asi_faucet=info,tower_http=debug
+
+# Alerts (Mattermost incoming webhook)
+ALERTS_ENABLED=false
+MATTERMOST_WEBHOOK_URL=
+MATTERMOST_CHANNEL=
+MATTERMOST_USERNAME=asi-faucet
+ALERT_THROTTLE_SEC=300
+ALERT_TIMEOUT_SEC=5
+ALERT_ENVIRONMENT=unknown
 ```
 
 ### .env.example Template
@@ -456,6 +571,9 @@ The server validates all configuration on startup:
    - `FAUCET_AMOUNT` must be greater than 0
    - Port numbers must be valid (1-65535)
 
+4. **Conditionally Required Variables:**
+   - `MATTERMOST_WEBHOOK_URL` must be set when `ALERTS_ENABLED=true`
+
 ### Validation Errors
 
 If validation fails, the server will exit with a clear error message:
@@ -470,6 +588,10 @@ Error: NODE_HOSTS, NODE_GRPC_PORTS, and NODE_HTTP_PORTS must have the same lengt
 
 ```
 Error: FAUCET_AMOUNT must be greater than 0
+```
+
+```
+Error: MATTERMOST_WEBHOOK_URL environment variable is required when ALERTS_ENABLED=true
 ```
 
 ---

@@ -24,7 +24,7 @@ pub async fn balance_handler(
         )
     })?;
 
-    let node_cli_service = NodeCliService::new(state.config.clone());
+    let node_cli_service = NodeCliService::new(state.config.clone(), state.alerts.clone());
     match node_cli_service.get_balance(&address).await {
         Ok(balance) => {
             info!(

@@ -32,7 +32,7 @@ pub async fn deploy_info_handler(
     State(state): State<AppState>,
     Path(deploy_id): Path<String>,
 ) -> ApiResult<DeployStatusResponse> {
-    let node_cli_service = NodeCliService::new(state.config.clone());
+    let node_cli_service = NodeCliService::new(state.config.clone(), state.alerts.clone());
 
     if !validate_deploy_id(&deploy_id) {
         return Err((
