@@ -68,6 +68,8 @@ git submodule init
 git submodule update
 ```
 
+The `rust-client` submodule is pinned to a specific tag in `.gitmodules`. To update it, change the `tag` field in `.gitmodules` and run `git submodule update`.
+
 2. **Create configuration file:**
 
 ```bash
@@ -368,6 +370,8 @@ brew install protobuf
 git submodule init
 git submodule update
 ```
+
+To update `rust-client` to a newer version, edit the `tag` field in `.gitmodules` and run `git submodule update`.
 
 #### "error: failed to compile openssl-sys"
 

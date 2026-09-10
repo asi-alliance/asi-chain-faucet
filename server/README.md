@@ -31,9 +31,9 @@ For complete project documentation, see the [main README](../README.md) in the r
    git submodule update
    ```
 
-   Keep `rust-client` submodule up-to-dated by running:
+   The `rust-client` submodule is pinned to a specific tag defined in `.gitmodules` (currently `v0.2.5`). To update to a newer tag, edit the `tag` field in `.gitmodules` and run:
    ```bash
-   git submodule update --init --remote -- rust-client 
+   git submodule update
    ```
 
 2. **Configure environment:**

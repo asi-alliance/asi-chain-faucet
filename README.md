@@ -76,7 +76,7 @@ The ASI Chain Faucet consists of two main components working together to provide
 git clone https://github.com/asi-alliance/asi-chain-faucet.git
 cd asi-chain-faucet
 
-# Initialize and update submodules
+# Initialize and update submodules (rust-client is pinned to a tag in .gitmodules)
 git submodule update --init --recursive
 
 cd server
