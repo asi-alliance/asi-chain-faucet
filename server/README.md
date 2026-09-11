@@ -31,9 +31,10 @@ For complete project documentation, see the [main README](../README.md) in the r
    git submodule update
    ```
 
-   The `rust-client` submodule is pinned to a specific tag defined in `.gitmodules` (currently `v0.2.5`). To update to a newer tag, edit the `tag` field in `.gitmodules` and run:
+   The `rust-client` submodule is pinned to a specific commit recorded by the superproject (currently `c3a5f086e1fd7ae54f5f8982e92359a8ac0ce3cc`). `git submodule update` checks out exactly that commit. To update it, check out the desired commit inside `server/rust-client` and stage the change:
    ```bash
-   git submodule update
+   git -C server/rust-client checkout <commit>
+   git add server/rust-client
    ```
 
 2. **Configure environment:**

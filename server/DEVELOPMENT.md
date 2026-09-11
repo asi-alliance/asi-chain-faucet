@@ -68,7 +68,7 @@ git submodule init
 git submodule update
 ```
 
-The `rust-client` submodule is pinned to a specific tag in `.gitmodules`. To update it, change the `tag` field in `.gitmodules` and run `git submodule update`.
+The `rust-client` submodule is pinned to a specific commit recorded by the superproject (currently `c3a5f086e1fd7ae54f5f8982e92359a8ac0ce3cc`). `git submodule update` checks out exactly that commit. To update it, check out the desired commit inside `server/rust-client` and stage the superproject change:
 
 2. **Create configuration file:**
 
@@ -371,7 +371,11 @@ git submodule init
 git submodule update
 ```
 
-To update `rust-client` to a newer version, edit the `tag` field in `.gitmodules` and run `git submodule update`.
+To update `rust-client` to a newer version, check out the desired commit inside `server/rust-client` and stage the superproject change:
+```bash
+git -C server/rust-client checkout <commit>
+git add server/rust-client
+```
 
 #### "error: failed to compile openssl-sys"
 
