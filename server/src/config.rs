@@ -47,6 +47,10 @@ pub struct AppConfig {
     pub deploy_max_wait_sec: u32,
     pub deploy_check_interval_sec: u32,
     pub deploy_phlo_limit: i64,
+    /// Max total time spent retrying exploratory queries that the observer
+    /// rejected because its exploratory-query capacity was busy. The node
+    /// advertises ~15 s, so the default leaves room for a retry past it.
+    pub exploratory_retry_budget_sec: u64,
 
     pub alerts_enabled: bool,
     pub mattermost_webhook_url: Option<Secret>,
@@ -82,6 +86,7 @@ impl AppConfig {
             deploy_max_wait_sec: Self::parse_env_or("DEPLOY_MAX_WAIT_SEC", 6),
             deploy_check_interval_sec: Self::parse_env_or("DEPLOY_CHECK_INTERVAL_SEC", 2),
             deploy_phlo_limit: Self::parse_env_or("DEPLOY_PHLO_LIMIT", 500_000),
+            exploratory_retry_budget_sec: Self::parse_env_or("EXPLORATORY_RETRY_BUDGET_SEC", 20),
 
             alerts_enabled: Self::parse_env_or("ALERTS_ENABLED", false),
             mattermost_webhook_url: Self::parse_env_secret("MATTERMOST_WEBHOOK_URL"),

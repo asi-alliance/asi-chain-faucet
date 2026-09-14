@@ -1,6 +1,6 @@
 use crate::{
     api::models::{ApiResult, DeployStatusResponse, ErrorResponse},
-    services::node_cli::NodeCliService,
+    services::node_cli::{DeployInfo, NodeCliService},
     utils::validate_deploy_id,
     AppState,
 };
@@ -9,11 +9,24 @@ use axum::{
     http::StatusCode,
     response::Json,
 };
-use node_cli::f1r3fly_api::DeployFinalizationStatus;
 use tracing::{error, info};
 
-fn to_status_response(info: &DeployFinalizationStatus) -> DeployStatusResponse {
-    let (status, msg) = match info.state.as_str() {
+fn to_status_response(info: &DeployInfo) -> DeployStatusResponse {
+    if let Some(err) = &info.system_deploy_error {
+        return DeployStatusResponse {
+            status: "DeployError".to_string(),
+            msg: Some(err.clone()),
+        };
+    }
+
+    if info.errored {
+        return DeployStatusResponse {
+            status: "DeployError".to_string(),
+            msg: Some("Deploy execution errored".to_string()),
+        };
+    }
+
+    let (status, msg) = match info.finalization.state.as_str() {
         "Finalized" => ("Finalized", None),
         "Failed" => ("DeployError", Some("Deploy execution failed".to_string())),
         "Expired" => ("DeployError", Some("Deploy expired".to_string())),

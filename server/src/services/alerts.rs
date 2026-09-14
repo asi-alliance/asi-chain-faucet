@@ -7,7 +7,6 @@ use std::time::{Duration, Instant};
 use tracing::{info, warn};
 
 const SERVICE_NAME: &str = "asi-faucet";
-const SEVERITY: &str = "critical";
 
 /// The only events that raise an alert. Throttling is keyed on this enum, so a
 /// storm of failures of the same kind collapses into a single message.
@@ -15,6 +14,7 @@ const SEVERITY: &str = "critical";
 pub enum AlertKind {
     NoReachableNodes,
     TransferDeployFailed,
+    DeployFailed,
 }
 
 impl AlertKind {
@@ -22,6 +22,7 @@ impl AlertKind {
         match self {
             AlertKind::NoReachableNodes => "No reachable nodes",
             AlertKind::TransferDeployFailed => "Transfer deploy failed",
+            AlertKind::DeployFailed => "Deploy failed",
         }
     }
 }
@@ -175,14 +176,11 @@ impl AlertService {
             event.kind.title()
         );
 
-        text.push_str(&format!("- severity: {SEVERITY}\n"));
         text.push_str(&format!("- error: {}\n", event.error));
 
         for (key, value) in &event.context {
             text.push_str(&format!("- {key}: {value}\n"));
         }
-
-        text.push_str(&format!("- time: {}\n", chrono::Utc::now().to_rfc3339()));
 
         if suppressed > 0 {
             text.push_str(&format!(
