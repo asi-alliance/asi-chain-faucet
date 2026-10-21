@@ -3,6 +3,7 @@ FROM rust:slim-bookworm AS builder
 WORKDIR /build
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    cmake \
     libprotobuf-dev \
     libssl-dev \
     make \
