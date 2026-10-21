@@ -23,7 +23,7 @@ pub async fn deploy_info_handler(
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse::validation_error(
-                "FAUCET: Invalid deploy ID format (must be 100-160 alphanumeric chars)",
+                "FAUCET: Invalid deploy ID format (must be 64 hexadecimal characters)",
             )),
         ));
     }

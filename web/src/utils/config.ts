@@ -3,10 +3,10 @@ import { type IInputWithValidationConfig } from "@hooks/useInputWithValidation";
 const ADDRESS_START_STRING: string = "1111";
 const ADDRESS_MINIMUM_LENGTH: number = 50;
 const ADDRESS_MAXIMUM_LENGTH: number = 54;
-const DEPLOY_ID_MINIMUM_LENGTH: number = 100;
-const DEPLOY_ID_MAXIMUM_LENGTH: number = 160;
+const DEPLOY_ID_MINIMUM_LENGTH: number = 64;
+const DEPLOY_ID_MAXIMUM_LENGTH: number = 64;
 const ADDRESS_ALPHABET_REGEX: RegExp = /^[a-zA-Z0-9]+$/;
-const DEPLOY_ID_ALPHABET_REGEX: RegExp = /^[a-zA-Z0-9]+$/;
+const DEPLOY_ID_ALPHABET_REGEX: RegExp = /^[a-fA-F0-9]+$/;
 
 const FEEDBACK_FORM_URL: string = (
     (import.meta.env.VITE_FEEDBACK_FORM_URL || "").trim() ||
@@ -49,7 +49,7 @@ const DEPLOY_ID_VALIDATION_CONFIG: IInputWithValidationConfig = {
     minimumLength: DEPLOY_ID_MINIMUM_LENGTH,
     maximumLength: DEPLOY_ID_MAXIMUM_LENGTH,
     alphabetRegex: DEPLOY_ID_ALPHABET_REGEX,
-    regexHint: "[0-9], [a-z], [A-Z]",
+    regexHint: "[0-9], [a-f], [A-F]",
 };
 
 export {
