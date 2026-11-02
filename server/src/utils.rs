@@ -13,10 +13,10 @@ pub struct NodeSocket {
 // simple validation, proper research needed
 pub fn validate_deploy_id(deploy_id: &str) -> bool {
     let len = deploy_id.len();
-    if len < 100 || len > 160 {
+    if len != 64 {
         return false;
     }
-    deploy_id.chars().all(|c| c.is_ascii_alphanumeric())
+    deploy_id.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 async fn is_node_available(client: &Client, node: &NodeSocket) -> bool {
