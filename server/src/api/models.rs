@@ -30,6 +30,8 @@ pub struct ErrorResponse {
     pub error: String,
     pub details: Option<String>,
     pub timestamp: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deploy_id: Option<String>,
 }
 
 impl ErrorResponse {
@@ -38,7 +40,13 @@ impl ErrorResponse {
             error,
             details,
             timestamp: chrono::Utc::now().to_rfc3339(),
+            deploy_id: None,
         }
+    }
+
+    pub fn with_deploy_id(mut self, deploy_id: String) -> Self {
+        self.deploy_id = Some(deploy_id);
+        self
     }
 
     pub fn validation_error(message: &str) -> Self {

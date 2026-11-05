@@ -24,3 +24,6 @@ Thumbs.db
 
 
 *.log
+
+# Pin application dependencies for repeatable client compatibility checks.
+!Cargo.lock

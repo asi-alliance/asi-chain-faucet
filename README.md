@@ -282,3 +282,20 @@ This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE) fi
 ---
 
 ASI Alliance founding members: Fetch.ai, SingularityNET, and CUDOS
+
+## Draft node admission compatibility
+
+This draft pins ASI client [#6](https://github.com/asi-alliance/asi-chain-client/pull/6)
+at `62b633ab05bb9d4e54672e8c2db1437264c3437b` for node
+[#789](https://github.com/F1R3FLY-io/f1r3node-rust/pull/789), using the client
+nightly `2026-02-09` toolchain. Use the committed submodule revision.
+
+Transfers are prepared and signed once before submission. An explicit admission
+refusal returns HTTP 503 with the exact `deploy_pool_busy` or
+`deploy_admission_busy` code and `deploy_id`. Unknown RPC outcomes return HTTP 502
+with `deploy_submission_unknown` and the original ID; check that ID before
+requesting a new transfer. The service does not retry or re-sign automatically.
+The UI displays these details and starts status polling only after acceptance.
+Balance reads retain exploratory-capacity retries; finalization and execution
+details use the observer HTTP port. This draft requires compatibility validation
+before merge and does not publish or deploy a new service.

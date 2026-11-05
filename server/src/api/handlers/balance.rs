@@ -20,7 +20,7 @@ pub async fn balance_handler(
     validate_address(&address).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::validation_error(e.as_str())),
+            Json(ErrorResponse::validation_error(&e.to_string())),
         )
     })?;
 
