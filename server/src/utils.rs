@@ -13,7 +13,7 @@ pub struct NodeSocket {
 
 pub fn validate_deploy_id(deploy_id: &str) -> bool {
     let len = deploy_id.len();
-    if len < 100 || len > 160 {
+    if !(100..=160).contains(&len) {
         return false;
     }
     deploy_id.chars().all(|c| c.is_ascii_alphanumeric())
