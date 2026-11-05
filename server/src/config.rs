@@ -139,8 +139,8 @@ impl AppConfig {
 
         let sockets: Vec<NodeSocket> = hosts
             .into_iter()
-            .zip(grpc_ports.into_iter())
-            .zip(http_ports.into_iter())
+            .zip(grpc_ports)
+            .zip(http_ports)
             .map(|((host, grpc_port), http_port)| NodeSocket {
                 host,
                 grpc_port,
