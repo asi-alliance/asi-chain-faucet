@@ -28,8 +28,9 @@ impl fmt::Debug for Secret {
 
 #[derive(Clone, Debug)]
 pub struct AppConfig {
-    pub faucet_amount: u64,
-    pub faucet_max_balance: u64,
+    pub faucet_amount: num_bigint::BigUint,
+    pub faucet_max_balance: num_bigint::BigUint,
+    pub native_token_decimals: u32,
     pub private_key: Option<Secret>,
 
     pub node_sockets: Vec<NodeSocket>,
@@ -62,15 +63,31 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-    pub fn from_env() -> Self {
+    pub fn from_env() -> anyhow::Result<Self> {
         dotenv::dotenv().ok();
 
         let node_sockets = Self::load_node_sockets().unwrap_or_default();
         let node_hosts_display = Self::render_node_hosts(&node_sockets);
 
-        Self {
-            faucet_amount: Self::parse_env_or("FAUCET_AMOUNT", 1000000000000),
-            faucet_max_balance: Self::parse_env_or("FAUCET_MAX_BALANCE", 2000000000000),
+        let native_token_decimals = env::var("FAUCET_TOKEN_DECIMALS")
+            .unwrap_or_else(|_| "8".into())
+            .parse::<u32>()?;
+        anyhow::ensure!(
+            native_token_decimals <= 18,
+            "FAUCET_TOKEN_DECIMALS must be in 0..18"
+        );
+        let faucet_amount = node_cli::vault::parse_amount(
+            &env::var("FAUCET_AMOUNT").unwrap_or_else(|_| "1000000000000".into()),
+        )?;
+        let faucet_max_balance = node_cli::vault::tokens_to_dust(
+            &env::var("FAUCET_MAX_BALANCE").unwrap_or_else(|_| "2000000000000".into()),
+            native_token_decimals,
+        )?;
+
+        Ok(Self {
+            faucet_amount,
+            faucet_max_balance,
+            native_token_decimals,
             private_key: Self::parse_env_secret("PRIVATE_KEY"),
 
             node_sockets,
@@ -97,7 +114,7 @@ impl AppConfig {
             alert_timeout_sec: Self::parse_env_or("ALERT_TIMEOUT_SEC", 5),
             alert_environment: Self::parse_env_non_empty("ALERT_ENVIRONMENT")
                 .unwrap_or_else(|| "unknown".to_string()),
-        }
+        })
     }
 
     fn parse_env_non_empty(name: &str) -> Option<String> {
@@ -184,8 +201,16 @@ impl AppConfig {
             return Err("PRIVATE_KEY environment variable is required".into());
         }
 
-        if self.faucet_amount == 0 {
+        if self.faucet_amount == num_bigint::BigUint::default() {
             return Err("FAUCET_AMOUNT must be greater than 0".into());
+        }
+
+        if self.faucet_max_balance == num_bigint::BigUint::default() {
+            return Err("FAUCET_MAX_BALANCE must be greater than 0".into());
+        }
+
+        if self.deploy_check_interval_sec == 0 || self.deploy_phlo_limit <= 0 {
+            return Err("Deploy check interval and phlo limit must be positive".into());
         }
 
         if self.alerts_enabled && self.mattermost_webhook_url.is_none() {
@@ -200,5 +225,40 @@ impl AppConfig {
 
     pub fn server_address(&self) -> String {
         format!("{}:{}", self.server_host, self.server_port)
+    }
+}
+
+pub fn is_eligible(balance: &str, ceiling: &num_bigint::BigUint) -> anyhow::Result<bool> {
+    let raw = node_cli::vault::parse_amount(balance)?;
+    anyhow::ensure!(raw.to_string() == balance, "Noncanonical balance");
+    Ok(&raw < ceiling)
+}
+
+#[cfg(test)]
+mod amount_tests {
+    use super::is_eligible;
+    use node_cli::vault::{parse_amount, tokens_to_dust};
+
+    #[test]
+    fn eligibility_is_exact_at_both_precisions() {
+        for decimals in [8, 18] {
+            let ceiling = tokens_to_dust("10", decimals).unwrap();
+            assert!(is_eligible(&(&ceiling - 1u32).to_string(), &ceiling).unwrap());
+            assert!(!is_eligible(&ceiling.to_string(), &ceiling).unwrap());
+            assert!(!is_eligible(&(&ceiling + 1u32).to_string(), &ceiling).unwrap());
+        }
+    }
+
+    #[test]
+    fn wide_amounts_and_invalid_balances() {
+        let wide = tokens_to_dust("10.000000000000000001", 18).unwrap();
+        assert_eq!(wide.to_string(), "10000000000000000001");
+        assert!(is_eligible("9007199254740993", &wide).unwrap());
+        let maximum = (num_bigint::BigUint::from(1u32) << 256usize) - 1u32;
+        assert!(parse_amount(&maximum.to_string()).is_ok());
+        assert!(parse_amount(&(maximum + 1u32).to_string()).is_err());
+        for invalid in ["", "-1", "1.0", "1e18", "01", "unavailable"] {
+            assert!(is_eligible(invalid, &wide).is_err());
+        }
     }
 }

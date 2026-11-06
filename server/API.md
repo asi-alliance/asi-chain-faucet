@@ -378,3 +378,14 @@ curl http://localhost:40470/deploy/d1f2e3b4a5c6789012345678901234567890abcdef12
 
 For configuration details, see [CONFIGURATION.md](CONFIGURATION.md).  
 For development information, see [DEVELOPMENT.md](DEVELOPMENT.md).
+# Monetary configuration
+
+`GET /config` returns public denomination and eligibility settings:
+
+```json
+{"native_token_decimals":18,"faucet_amount":"10000000000000000001","eligibility_ceiling":"100000000000000000000"}
+```
+
+Amounts are atomic-unit strings. Eligibility is strictly below the pre-claim
+ceiling. The response contains no signing or service credentials.
+

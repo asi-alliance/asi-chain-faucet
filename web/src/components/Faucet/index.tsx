@@ -1,13 +1,12 @@
 import AddressBalance from "@components/AddressBalance";
 import LoaderWithLabel from "@components/LoaderWithLabel";
 import { useFaucetTransactions } from "@context/FaucetTransactionsContext";
-import { faucetTokens, getBalance } from "@api/index";
-import { convertCogsToBalance } from "@utils/methods";
+import { faucetTokens, getBalance, getMonetaryConfig } from "@api/index";
+import { formatAtomic, isEligible } from "@utils/amounts";
 import ValidationMessagesList, {
     TValidationMessage,
 } from "@components/ValidationMessagesList";
 import {
-    BALANCE_FAUCET_CEILING,
     FaucetCoins,
     FaucetPhases,
 } from "@utils/constants";
@@ -26,7 +25,7 @@ export interface IFaucetProps {
 
 const Faucet = ({ address }: IFaucetProps): ReactElement => {
     const [errorsList, setErrorsList] = useState<TValidationMessage[]>([]);
-    const [addressBalance, setAddressBalance] = useState<number | null>(null);
+    const [addressBalance, setAddressBalance] = useState<string | null>(null);
     const [isAddressBalanceFetching, setIsAddressBalanceFetching] =
         useState<boolean>(false);
     const [faucetPhase, setFaucetPhase] = useState<FaucetPhases>(
@@ -52,7 +51,7 @@ const Faucet = ({ address }: IFaucetProps): ReactElement => {
             setIsAddressBalanceFetching(true);
             setIsFlowCompleted(false);
 
-            const balance = await getBalance(address);
+            const [balance, config] = await Promise.all([getBalance(address), getMonetaryConfig()]);
 
             if (requestId !== requestIdRef.current) {
                 return;
@@ -64,11 +63,11 @@ const Faucet = ({ address }: IFaucetProps): ReactElement => {
                 );
             }
 
-            const formattedBalance = convertCogsToBalance(balance);
+            const formattedBalance = formatAtomic(balance, config.decimals);
 
             setAddressBalance(formattedBalance);
 
-            if (formattedBalance <= BALANCE_FAUCET_CEILING) {
+            if (isEligible(balance, config.ceiling)) {
                 setFaucetPhase(FaucetPhases.READY_TO_CLAIM);
                 setErrorsList([]);
             } else {

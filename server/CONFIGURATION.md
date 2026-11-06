@@ -6,6 +6,32 @@ Complete configuration guide for ASI Chain Faucet backend server.
 
 ## Overview
 
+### Exact amounts and native precision
+
+`FAUCET_TOKEN_DECIMALS` is an integer in 0..18, default 8. The selected node
+must report the same precision before the faucet signs a transfer.
+`FAUCET_AMOUNT` remains an unsigned atomic-unit decimal string, now bounded by
+uint256 instead of u64. For example, ten tokens plus one atomic unit on an
+18-decimal test network is `10000000000000000001`.
+
+`FAUCET_MAX_BALANCE` retains the server's existing **whole-token** interpretation.
+It accepts an exact decimal token string and scales it once using configured
+precision. Eligibility is strictly `balance < ceiling`; equality is ineligible.
+The threshold applies to the balance before distribution, not the resulting
+post-transfer balance. It is not a cumulative claim or rate limit.
+The historical defaults remain unchanged. Review them explicitly when changing
+network precision. Invalid or overflowing monetary configuration fails startup.
+
+`GET /config` exposes only native precision, atomic distribution amount, and
+atomic eligibility ceiling as exact JSON values. The frontend reads these
+server settings together with the balance. Its legacy `VITE_TOKEN_DECIMALS`
+and `VITE_FAUCET_BALANCE_LIMIT` helpers no longer select claim eligibility.
+Unavailable, malformed, negative, or inexact balance responses do not enable claims.
+
+The Rust-client submodule now selects ASI client #5 at
+`b676e1d053dfdc82d3be10c3f5e76a22e86052b9`. This is the classic signing / node
+#896 profile. Node #881 requires a separate binding and signing migration.
+
 The backend server is configured through environment variables defined in a `.env` file. All configuration is loaded at startup and validated before the server starts accepting requests.
 
 ---
@@ -146,7 +172,7 @@ FAUCET_AMOUNT=1000000000000
 
 **Format:** Integer (positive, non-zero)
 
-**Unit:** Smallest token unit. In this implementation, 1 ASI = 10^8 (8 decimal places)
+**Unit:** Atomic units. One ASI is `10^FAUCET_TOKEN_DECIMALS` atomic units (default 8 decimals).
 
 **Default:** 1000000000000
 
@@ -165,19 +191,19 @@ FAUCET_AMOUNT=1000000000000  # Send 10,000 ASI per request
 FAUCET_MAX_BALANCE=2000000000000
 ```
 
-**Description:** Maximum balance (in ASI smallest token unit) a recipient can have to be eligible for faucet tokens.
+**Description:** Pre-claim eligibility ceiling in whole ASI tokens. A balance equal to the ceiling is ineligible.
 
-**Format:** Integer (positive)
+**Format:** Positive decimal token string, exactly representable at configured precision and within uint256 atomic units.
 
-**Unit:** Smallest token unit. In this implementation, 1 ASI = 10^8 (8 decimal places)
+**Unit:** Whole ASI tokens. The server's historical whole-token interpretation is retained.
 
 **Default:** 2000000000000
 
-**Purpose:** Prevents abuse by limiting how many times the same address can receive tokens
+**Purpose:** Checks the observed balance before a claim. This is not rate limiting or pending-claim reconciliation; see issue #44.
 
 **Example:**
 ```bash
-FAUCET_MAX_BALANCE=2000000000000  # Addresses with 20,000+ ASI are ineligible
+FAUCET_MAX_BALANCE=20000  # Addresses with 20,000+ ASI are ineligible; explicitly overrides the historical default
 ```
 
 ---
@@ -465,36 +491,23 @@ Each message carries the environment label, service name, severity, event type, 
 
 ## Token Decimals and Frontend Integration
 
-### Backend Token Decimals
+The backend validates `FAUCET_TOKEN_DECIMALS` in 0..18 and checks the selected
+node's reported precision before signing. Monetary configuration errors fail startup.
+The frontend reads `/config` for precision and atomic eligibility limits, so
+claim decisions use the same units as the backend. Deploy this frontend with
+the matching backend; an old backend without `/config` leaves claims unavailable.
 
-The backend uses a **hardcoded conversion factor of 10^8** for all balance calculations. This is implemented in `src/api/handlers/transfer.rs`:
-
-```rust
-let max_balance_allowed: u128 = state.config.faucet_max_balance as u128 * 10u128.pow(8);
-```
-
-This means:
-- 1 ASI token = 10^8 (in smallest unit)
-- The token effectively has **8 decimal places**
-- This value is **not configurable** via environment variables
-
-### Frontend Configuration
-
-The frontend uses `VITE_TOKEN_DECIMALS` environment variable to display balances correctly. To match the backend's behavior:
+For an isolated native18 configuration:
 
 ```bash
-VITE_TOKEN_DECIMALS=8  # Must match backend's 10^8 conversion factor
+FAUCET_TOKEN_DECIMALS=18
+FAUCET_AMOUNT=10000000000000000001
+FAUCET_MAX_BALANCE=100
 ```
 
-**Warning:** If the frontend uses a different decimals value (e.g., the default of 9), balance displays will be incorrect by a factor of 10.
-
-### Consistency Requirements
-
-| Component | Setting | Value | Required |
-|-----------|---------|-------|----------|
-| Backend | Hardcoded in code | 10^8 | Fixed |
-| Frontend | VITE_TOKEN_DECIMALS | 8 | Must match |
-| Display | Human-readable | X.XXXXXXXX | 8 decimal places |
+This distributes `10.000000000000000001` ASI to an address whose observed
+pre-claim balance is below 100 ASI. Transfer amounts and ceilings are bounded
+by uint256. Fee prices and signed deploy fields retain the classic client widths.
 
 ---
 

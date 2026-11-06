@@ -1,14 +1,8 @@
 import { REV_DECIMALS } from "./config";
+import { decimalToAtomic, formatAtomic } from "./amounts";
 
-const POWER_BASE: number = 10;
-
-const convertCogsToBalance = (cogs: number): number => {
-    return cogs / Math.pow(POWER_BASE, REV_DECIMALS);
-};
-
-const convertBalanceToCogs = (balance: number): number => {
-    return balance * Math.pow(POWER_BASE, REV_DECIMALS);
-};
+const convertCogsToBalance = (cogs: unknown): string => formatAtomic(cogs, REV_DECIMALS);
+const convertBalanceToCogs = (balance: string): bigint => decimalToAtomic(balance, REV_DECIMALS);
 
 const isErrorStatus = (status: string) =>
     /_ERROR$/i.test(status) || /Error$/i.test(status);
