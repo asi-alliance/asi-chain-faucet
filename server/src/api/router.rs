@@ -34,18 +34,22 @@ pub fn create_router(state: AppState) -> Router {
         .route("/transfer", post(transfer_handler).options(preflight))
         .route(
             "/deploy/{deploy_id}",
-            get(deploy_info_handler).options(preflight),
+            get(deploy_info_handler)
+                .options(preflight)
+                .layer(TimeoutLayer::new(Duration::from_secs(7))),
         )
         .route(
             "/balance/{address}",
             get(balance_handler).options(preflight),
         );
 
+    // Balance and transfer operations use bounded node-client requests. An
+    // outer deadline would cut off exploratory retries or cancel submission
+    // before the handler can return the original signed ID on an unknown outcome.
     api_routes
         .layer(cors)
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
         .layer(RequestIdLayer::new())
-        .layer(TimeoutLayer::new(Duration::from_secs(7)))
         .layer(CompressionLayer::new())
         .with_state(state)
 }

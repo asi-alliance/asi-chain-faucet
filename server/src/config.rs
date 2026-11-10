@@ -188,6 +188,10 @@ impl AppConfig {
             return Err("FAUCET_AMOUNT must be greater than 0".into());
         }
 
+        if self.deploy_check_interval_sec == 0 || self.deploy_phlo_limit <= 0 {
+            return Err("Deploy check interval and phlo limit must be positive".into());
+        }
+
         if self.alerts_enabled && self.mattermost_webhook_url.is_none() {
             return Err(
                 "MATTERMOST_WEBHOOK_URL environment variable is required when ALERTS_ENABLED=true"

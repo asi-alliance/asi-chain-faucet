@@ -119,7 +119,7 @@ fn transfer_error_response(error: &anyhow::Error) -> (StatusCode, Json<ErrorResp
             "deploy_rejected",
             Some(failure.deploy_id().to_string()),
         ),
-        None => (StatusCode::BAD_REQUEST, "FAUCET: Transfer failed", None),
+        None => (StatusCode::BAD_GATEWAY, "FAUCET: Transfer failed", None),
     };
     let mut body = ErrorResponse::new(code.to_string(), Some(error.to_string()));
     if let Some(id) = deploy_id {
