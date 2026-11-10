@@ -1,6 +1,5 @@
-import { FAUCET_BALANCE_LIMIT, MAX_POLLS_MINUTES_COUNT } from "./config";
+import { MAX_POLLS_MINUTES_COUNT } from "./config";
 
-const BALANCE_FAUCET_CEILING: bigint = FAUCET_BALANCE_LIMIT;
 const MINUTES_TO_MS_MULTIPLIER: number = 60 * 1000;
 
 const MAX_POLL_MS: number = MAX_POLLS_MINUTES_COUNT * MINUTES_TO_MS_MULTIPLIER;
@@ -30,7 +29,6 @@ enum DeployStatuses {
 export {
     MAX_POLL_MS,
     POLL_INTERVAL_SEC,
-    BALANCE_FAUCET_CEILING,
     MINUTES_TO_MS_MULTIPLIER,
     FaucetCoins,
     FaucetPhases,

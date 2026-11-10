@@ -9,7 +9,8 @@ Complete configuration guide for ASI Chain Faucet backend server.
 ### Exact amounts and native precision
 
 `FAUCET_TOKEN_DECIMALS` is an integer in 0..18, default 8. The selected node
-must report the same precision before the faucet signs a transfer.
+must report the same precision before the faucet signs a transfer. Its own
+HTTP status supplies the minimum phlo price used for that submission.
 `FAUCET_AMOUNT` remains an unsigned atomic-unit decimal string, now bounded by
 uint256 instead of u64. For example, ten tokens plus one atomic unit on an
 18-decimal test network is `10000000000000000001`.
@@ -25,12 +26,15 @@ network precision. Invalid or overflowing monetary configuration fails startup.
 `GET /config` exposes only native precision, atomic distribution amount, and
 atomic eligibility ceiling as exact JSON values. The frontend reads these
 server settings together with the balance. Its legacy `VITE_TOKEN_DECIMALS`
-and `VITE_FAUCET_BALANCE_LIMIT` helpers no longer select claim eligibility.
+and `VITE_FAUCET_BALANCE_LIMIT` settings are ignored; `/config` is authoritative.
 Unavailable, malformed, negative, or inexact balance responses do not enable claims.
+Balance reads retain the system-vault exploratory query and the configured
+`EXPLORATORY_RETRY_BUDGET_SEC` for observer capacity refusals.
 
 The Rust-client submodule now selects ASI client #5 at
 `b676e1d053dfdc82d3be10c3f5e76a22e86052b9`. This is the classic signing / node
 #896 profile. Node #881 requires a separate binding and signing migration.
+Build with the committed `nightly-2026-02-09` toolchain and `Cargo.lock`.
 
 The backend server is configured through environment variables defined in a `.env` file. All configuration is loaded at startup and validated before the server starts accepting requests.
 

@@ -5,9 +5,11 @@ use anyhow::{Context, Result};
 use node_cli::f1r3fly_api::DeployFinalizationStatus;
 use node_cli::vault::build_transfer_rholang;
 use node_cli::{
-    ConnectionConfig, DeployOptions, Endpoint, F1r3flyConnectionManager, NodeHttp, SigningKey,
+    ConnectionConfig, DeployOptions, Endpoint, F1r3flyApi, F1r3flyConnectionManager, NodeHttp,
+    SigningKey,
 };
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::{error, warn};
 
 #[derive(Clone)]
@@ -49,7 +51,12 @@ impl NodeCliService {
         ))?;
         let rholang =
             build_transfer_rholang(&api.get_address()?, to_address, &self.config.faucet_amount)?;
-        let status = self.observer()?.get_json("/api/status").await?;
+        let status = NodeHttp::new(Endpoint::parse(&format!(
+            "http://{}:{}",
+            node.host, node.http_port
+        ))?)?
+        .get_json("/api/status")
+        .await?;
         let decimals = status
             .get("nativeTokenDecimals")
             .context("Missing native token decimals")?;
@@ -77,12 +84,16 @@ impl NodeCliService {
     }
 
     pub async fn get_balance(&self, address: &str) -> Result<String> {
-        Ok(self
-            .observer()?
-            .balance(address, None)
-            .await?
-            .dust
-            .to_string())
+        let rholang_query = build_balance_query(address)?;
+        let api = F1r3flyApi::new(Endpoint::parse(&format!(
+            "http://{}:{}",
+            self.config.observer_host, self.config.observer_grpc_port
+        ))?)?
+        .with_exploratory_retry_budget(Duration::from_secs(
+            self.config.exploratory_retry_budget_sec,
+        ));
+        let result = api.exploratory_deploy(&rholang_query, None, false).await?;
+        Ok(result.value()?.as_amount()?.to_string())
     }
 
     pub async fn get_deploy_info(&self, id: String) -> Result<DeployInfo> {
@@ -126,8 +137,6 @@ impl NodeCliService {
         latest.ok_or_else(|| anyhow::anyhow!("no deploy status returned"))
     }
 
-    /// Read `/api/deploy/{id}` and return its `(systemDeployError, errored)`.
-    /// A missing detail is not fatal: the finalization endpoint still answers.
     fn observer(&self) -> Result<NodeHttp> {
         Ok(NodeHttp::new(Endpoint::parse(&format!(
             "http://{}:{}",
@@ -135,6 +144,8 @@ impl NodeCliService {
         ))?)?)
     }
 
+    /// Read `/api/deploy/{id}` and return its `(systemDeployError, errored)`.
+    /// A missing detail is not fatal: the finalization endpoint still answers.
     async fn fetch_deploy_error(&self, id: &str, api: &NodeHttp) -> (Option<String>, bool) {
         match api.get_deploy_detail(id).await {
             Ok(Some(detail)) => {
@@ -187,4 +198,27 @@ impl NodeCliService {
                 .with_context("state", status.state.clone()),
         );
     }
+}
+
+// Keep the system-vault ABI and exploratory-capacity retry behavior used by
+// existing observers while decoding all integer kinds as exact uint256 amounts.
+fn build_balance_query(address: &str) -> node_cli::Result<String> {
+    node_cli::vault::validate_address(address)?;
+    Ok(format!(
+        r#"new return, rl(`rho:registry:lookup`), systemVaultCh, vaultCh, balanceCh in {{
+ rl!(`rho:vault:system`, *systemVaultCh) |
+ for (@(_, SystemVault) <- systemVaultCh) {{
+ @SystemVault!("findOrCreate", "{address}", *vaultCh) |
+ for (@either <- vaultCh) {{
+ match either {{
+ (true, vault) => {{
+ @vault!("balance", *balanceCh) |
+ for (@balance <- balanceCh) {{ return!(balance) }}
+ }}
+ (false, _) => return!(-1)
+ }}
+ }}
+ }}
+}}"#
+    ))
 }

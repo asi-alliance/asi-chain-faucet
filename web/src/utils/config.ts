@@ -1,5 +1,4 @@
 import { type IInputWithValidationConfig } from "@hooks/useInputWithValidation";
-import { decimalToAtomic, validateDecimals } from "./amounts";
 
 const ADDRESS_START_STRING: string = "1111";
 const ADDRESS_MINIMUM_LENGTH: number = 50;
@@ -22,11 +21,6 @@ const USER_GUIDE_URL: string = (
 const BASE_URL: string = (
     (import.meta.env.VITE_BASE_URL || "").trim() || "http://localhost:3001"
 ).replace(/\/+$/, "");
-
-const REV_DECIMALS = validateDecimals(Number(import.meta.env.VITE_TOKEN_DECIMALS ?? "8"));
-const FAUCET_BALANCE_LIMIT = decimalToAtomic(
-    import.meta.env.VITE_FAUCET_BALANCE_LIMIT ?? "20000", REV_DECIMALS,
-);
 
 const parsedMaxPollsMinutes: number = Number(
     (import.meta.env.VITE_MAX_POLLS_MINUTES_COUNT || "").trim() || "15",
@@ -52,11 +46,9 @@ const DEPLOY_ID_VALIDATION_CONFIG: IInputWithValidationConfig = {
 
 export {
     BASE_URL,
-    FAUCET_BALANCE_LIMIT,
     ADDRESS_VALIDATION_CONFIG,
     DEPLOY_ID_VALIDATION_CONFIG,
     FEEDBACK_FORM_URL,
     USER_GUIDE_URL,
-    REV_DECIMALS,
     MAX_POLLS_MINUTES_COUNT,
 };

@@ -108,12 +108,12 @@ Transfer failed (400 Bad Request):
    - Only alphanumeric characters allowed
 
 2. **Balance Check:**
-   - Recipient balance must be below `FAUCET_MAX_BALANCE` (default: 20,000 ASI)
+   - Recipient balance must be strictly below `FAUCET_MAX_BALANCE`, configured in whole tokens (historical default: 2,000,000,000,000 ASI)
    - Balance checked before transfer is initiated
 
 3. **Amount:**
    - Transfer amount is configured via `FAUCET_AMOUNT` environment variable
-   - Default: 10,000 units (smallest unit)
+   - Default: 1,000,000,000,000 atomic units (10,000 ASI at the default 8 decimals)
 
 **Processing Flow:**
 
@@ -122,17 +122,17 @@ Transfer failed (400 Bad Request):
 3. Check balance against faucet limit
 4. Select random validator node with availability check:
    - Nodes are shuffled randomly
-   - Each node is checked for availability via HTTP `/status` endpoint with 2 second timeout
+   - Each node is checked for availability via HTTP `/api/status` endpoint with a 5 second timeout
    - First available node is selected
    - Request fails if no nodes are reachable
 5. Initiate transfer using private key via node CLI
 6. Return deploy ID to client
 
-**Note on Transfer Timeout:** The transfer operation currently uses hardcoded timeout values (`max_wait: 60 seconds`, `check_interval: 5 seconds`) that differ from the configurable `DEPLOY_MAX_WAIT_SEC` and `DEPLOY_CHECK_INTERVAL_SEC` used in deploy status queries.
+**Note on Transfer Timeout:** Transfers return after submission without waiting for finalization. Node connections and individual requests have bounded timeouts (10 and 30 seconds respectively); observer capacity retries use `EXPLORATORY_RETRY_BUDGET_SEC`. There is no outer seven-second deadline cancelling an in-flight submission. `DEPLOY_MAX_WAIT_SEC` and `DEPLOY_CHECK_INTERVAL_SEC` apply to deploy status queries.
 
 **Response Time:**
 - Typical: 1-3 seconds
-- Maximum: 7 seconds (enforced by timeout middleware)
+- Bound: balance query, validator availability checks, tip preparation, and submission each use their own node-client timeouts.
 
 **Status Codes:**
 - `200 OK` - Transfer successfully initiated
@@ -169,7 +169,7 @@ GET /balance/11114GuXVLzHJqUqDUJGLJJsn8c1ASIhztKZtG1KN1jV48XPBUdVzKBD3R HTTP/1.1
 
 | Field | Type | Description |
 |-------|------|-------------|
-| balance | string | Balance in smallest unit. In this implementation, 1 ASI = 10^8 (8 decimal places) |
+| balance | string | Exact uint256 balance in atomic units. One ASI = 10^FAUCET_TOKEN_DECIMALS atomic units (default 8 decimals). |
 
 **Error Responses:**
 
@@ -192,16 +192,16 @@ Query failed (400 Bad Request):
 ```
 
 **Implementation Details:**
-- Uses `wallet_balance_command` from node_cli
+- Queries the system vault through the node_cli exploratory API
 - Connects to read-only observer node via gRPC (port 40452)
 - Returns raw balance string without conversion
 - Balance is returned in the smallest unit 
-- Backend uses 10^8 as the conversion factor for balance calculations
-- Frontend should use `VITE_TOKEN_DECIMALS=8` to correctly display balances
+- Backend uses `FAUCET_TOKEN_DECIMALS` for balance calculations
+- Frontend reads precision and the atomic eligibility ceiling from `GET /config`
 
 **Response Time:**
 - Typical: 100-200ms
-- Maximum: 7 seconds (enforced by timeout middleware)
+- Bound: `EXPLORATORY_RETRY_BUDGET_SEC` plus connection and individual query timeouts.
 
 **Status Codes:**
 - `200 OK` - Balance retrieved successfully
@@ -370,7 +370,7 @@ curl http://localhost:40470/deploy/d1f2e3b4a5c6789012345678901234567890abcdef12
 | HTTP Status | Error Type | Description |
 |-------------|------------|-------------|
 | 400 | Validation Error | Invalid input format or business rule violation |
-| 408 | Request Timeout | Request exceeded 7 second timeout |
+| 408 | Request Timeout | Deploy status query exceeded its 7 second route timeout |
 | 413 | Payload Too Large | Request body exceeds 1MB limit |
 | 500 | Internal Server Error | Server-side error during processing |
 

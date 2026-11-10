@@ -20,7 +20,7 @@ export function decimalToAtomic(value: string, decimals: number): bigint {
     validateDecimals(decimals);
     if (!/^\d+(\.\d+)?$/.test(value)) throw new Error("Invalid token amount");
     const [whole, fraction = ""] = value.split(".");
-    if (/[1-9]/.test(fraction.slice(decimals))) throw new Error("Excess fractional precision");
+    if (fraction.length > decimals) throw new Error("Excess fractional precision");
     const amount = BigInt(whole) * 10n ** BigInt(decimals)
         + BigInt(fraction.slice(0, decimals).padEnd(decimals, "0") || "0");
     if (amount > UINT256_MAX) throw new Error("Amount exceeds uint256");

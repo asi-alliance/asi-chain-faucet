@@ -45,18 +45,21 @@ pub fn create_router(state: AppState) -> Router {
         .route("/transfer", post(transfer_handler).options(preflight))
         .route(
             "/deploy/{deploy_id}",
-            get(deploy_info_handler).options(preflight),
+            get(deploy_info_handler)
+                .options(preflight)
+                .layer(TimeoutLayer::new(Duration::from_secs(7))),
         )
         .route(
             "/balance/{address}",
             get(balance_handler).options(preflight),
         );
 
+    // Let exploratory retries and submission finish within the node client's
+    // bounded requests instead of cancelling them at the old seven-second limit.
     api_routes
         .layer(cors)
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
         .layer(RequestIdLayer::new())
-        .layer(TimeoutLayer::new(Duration::from_secs(7)))
         .layer(CompressionLayer::new())
         .with_state(state)
 }
