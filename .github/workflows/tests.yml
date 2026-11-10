@@ -1,0 +1,102 @@
+name: Faucet tests
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  backend-tests:
+    name: Backend tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: server
+    env:
+      CARGO_BUILD_JOBS: 2
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake clang libclang-dev libprotobuf-dev \
+            libssl-dev make perl pkg-config protobuf-compiler
+      - name: Install repository Rust toolchain
+        run: |
+          rustup toolchain install --profile minimal --component rustfmt --no-self-update
+          toolchain="$(rustup show active-toolchain)"
+          echo "$toolchain"
+          echo "RUSTUP_TOOLCHAIN=${toolchain%% *}" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: server -> target
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Run backend tests
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/test-results"
+          cargo test --locked --all-targets 2>&1 | tee "$GITHUB_WORKSPACE/test-results/backend.log"
+      - name: Upload backend test log
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: backend-test-results
+          path: test-results/backend.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  frontend-tests:
+    name: Frontend tests and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Run frontend tests
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/test-results"
+          npm run test:amounts 2>&1 | tee "$GITHUB_WORKSPACE/test-results/frontend.log"
+      - name: Build frontend
+        run: npm run build 2>&1 | tee "$GITHUB_WORKSPACE/test-results/frontend-build.log"
+      - name: Lint frontend
+        run: npm run lint 2>&1 | tee "$GITHUB_WORKSPACE/test-results/frontend-lint.log"
+      - name: Upload frontend test logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: frontend-test-results
+          path: test-results/frontend*.log
+          if-no-files-found: ignore
+          retention-days: 7
