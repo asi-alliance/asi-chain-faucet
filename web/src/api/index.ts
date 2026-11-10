@@ -1,11 +1,23 @@
 import { BASE_URL } from "@utils/config";
+import { parseAtomic, validateDecimals } from "@utils/amounts";
+
+export async function getMonetaryConfig() {
+    const response = await fetch(`${BASE_URL}/config`);
+    if (!response.ok) throw new Error("Faucet amount configuration is unavailable");
+    const config = await response.json();
+    return {
+        decimals: validateDecimals(config.native_token_decimals),
+        amount: parseAtomic(config.faucet_amount),
+        ceiling: parseAtomic(config.eligibility_ceiling),
+    };
+}
 
 export interface IStatusResponse {
     status: string;
     msg?: string;
 }
 
-export const getBalance = async (walletAddress: string): Promise<number> => {
+export const getBalance = async (walletAddress: string): Promise<string> => {
     const response = await fetch(`${BASE_URL}/balance/${walletAddress}`, {
         method: "GET",
         mode: "cors",

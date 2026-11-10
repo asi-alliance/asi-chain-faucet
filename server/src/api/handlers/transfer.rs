@@ -20,24 +20,24 @@ async fn ensure_recipient_balance_below_limit(
 
     let Json(BalanceResponse { balance }) = balance_json;
 
-    let balance_value: u128 = balance.parse().map_err(|_| {
-        warn!(
-            "FAUCET: Unable to parse balance '{}' for address {}",
-            balance, address
-        );
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::validation_error(
-                "FAUCET: Unable to parse existing balance for address",
-            )),
-        )
-    })?;
+    let eligible =
+        crate::config::is_eligible(&balance, &state.config.faucet_max_balance).map_err(|_| {
+            warn!(
+                "FAUCET: Unable to parse balance '{}' for address {}",
+                balance, address
+            );
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse::validation_error(
+                    "FAUCET: Unable to parse existing balance for address",
+                )),
+            )
+        })?;
 
-    let max_balance_allowed: u128 = state.config.faucet_max_balance as u128 * 10u128.pow(8);
-    if balance_value >= max_balance_allowed {
+    if !eligible {
         warn!(
             "FAUCET: Address {} balance {} exceeds faucet limit {}",
-            address, balance_value, max_balance_allowed
+            address, balance, state.config.faucet_max_balance
         );
         return Err((
             StatusCode::BAD_REQUEST,
@@ -63,7 +63,7 @@ pub async fn transfer_handler(
     validate_address(&request.to_address).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::validation_error(e.as_str())),
+            Json(ErrorResponse::validation_error(&e.to_string())),
         )
     })?;
 

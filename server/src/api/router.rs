@@ -23,6 +23,16 @@ async fn preflight() -> impl IntoResponse {
     StatusCode::NO_CONTENT
 }
 
+async fn monetary_config(
+    axum::extract::State(state): axum::extract::State<AppState>,
+) -> axum::Json<serde_json::Value> {
+    axum::Json(serde_json::json!({
+        "native_token_decimals": state.config.native_token_decimals,
+        "faucet_amount": state.config.faucet_amount.to_string(),
+        "eligibility_ceiling": state.config.faucet_max_balance.to_string(),
+    }))
+}
+
 pub fn create_router(state: AppState) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -31,21 +41,25 @@ pub fn create_router(state: AppState) -> Router {
         .max_age(Duration::from_secs(60 * 60));
 
     let api_routes = Router::new()
+        .route("/config", get(monetary_config).options(preflight))
         .route("/transfer", post(transfer_handler).options(preflight))
         .route(
             "/deploy/{deploy_id}",
-            get(deploy_info_handler).options(preflight),
+            get(deploy_info_handler)
+                .options(preflight)
+                .layer(TimeoutLayer::new(Duration::from_secs(7))),
         )
         .route(
             "/balance/{address}",
             get(balance_handler).options(preflight),
         );
 
+    // Let exploratory retries and submission finish within the node client's
+    // bounded requests instead of cancelling them at the old seven-second limit.
     api_routes
         .layer(cors)
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
         .layer(RequestIdLayer::new())
-        .layer(TimeoutLayer::new(Duration::from_secs(7)))
         .layer(CompressionLayer::new())
         .with_state(state)
 }

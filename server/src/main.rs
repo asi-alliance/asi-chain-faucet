@@ -17,7 +17,7 @@ async fn main() -> Result<()> {
 
     info!("Starting ASI Faucet service");
 
-    let config = AppConfig::from_env();
+    let config = AppConfig::from_env()?;
     info!("Configuration loaded");
 
     debug!("Server config = {:?}", config);
