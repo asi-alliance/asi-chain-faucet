@@ -68,7 +68,13 @@ git submodule init
 git submodule update
 ```
 
-The `rust-client` submodule is pinned to a specific commit recorded by the superproject (currently `c3a5f086e1fd7ae54f5f8982e92359a8ac0ce3cc`). `git submodule update` checks out exactly that commit. To update it, check out the desired commit inside `server/rust-client` and stage the superproject change:
+The `rust-client` submodule pins [upstream Rust client PR #88](https://github.com/F1R3FLY-io/rust-client/pull/88)
+at `ce2b5fcfe3012c07ea11442dcc072cd7ba6d7d2f` for the node #881 uint256
+protocol, including #896/#947 exact JSON values. Earlier monetary wire formats
+are unsupported. For an existing checkout, run `git submodule sync --recursive`
+before updating because the client URL changed from the ASI fork to upstream.
+`git submodule update` checks out the recorded commit. To update it, check out
+the desired commit inside `server/rust-client` and stage the superproject change:
 
 2. **Create configuration file:**
 
