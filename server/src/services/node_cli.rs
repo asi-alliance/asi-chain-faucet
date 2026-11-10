@@ -2,7 +2,7 @@ use crate::config::AppConfig;
 use crate::services::alerts::{AlertEvent, AlertKind, AlertService};
 use crate::utils::choose_random_node;
 use anyhow::{Context, Result};
-use node_cli::f1r3fly_api::DeployFinalizationStatus;
+use node_cli::f1r3fly_api::{DeployFinalizationStatus, NodeStatus};
 use node_cli::vault::build_transfer_rholang;
 use node_cli::{
     ConnectionConfig, DeployOptions, Endpoint, F1r3flyApi, F1r3flyConnectionManager, NodeHttp,
@@ -51,29 +51,26 @@ impl NodeCliService {
         ))?;
         let rholang =
             build_transfer_rholang(&api.get_address()?, to_address, &self.config.faucet_amount)?;
-        let status = NodeHttp::new(Endpoint::parse(&format!(
-            "http://{}:{}",
-            node.host, node.http_port
-        ))?)?
-        .get_json("/api/status")
-        .await?;
+        let status: NodeStatus = serde_json::from_value(
+            NodeHttp::new(Endpoint::parse(&format!(
+                "http://{}:{}",
+                node.host, node.http_port
+            ))?)?
+            .get_json("/api/status")
+            .await?,
+        )
+        .context("Invalid node status (uint256 protocol required)")?;
         let decimals = status
-            .get("nativeTokenDecimals")
+            .native_token_decimals
             .context("Missing native token decimals")?;
         anyhow::ensure!(
-            decimals.to_string().trim_matches('"') == self.config.native_token_decimals.to_string(),
+            decimals == self.config.native_token_decimals,
             "Configured decimals do not match node runtime"
         );
-        let phlo_price: i64 = status
-            .get("minPhloPrice")
-            .context("Missing minimum phlo price")?
-            .to_string()
-            .trim_matches('"')
-            .parse()?;
-        anyhow::ensure!(phlo_price > 0, "Invalid minimum phlo price");
         let mut options =
             DeployOptions::default().with_phlo_limit(u64::try_from(self.config.deploy_phlo_limit)?);
-        options.phlo_price = phlo_price;
+        // The client validates the uint256 price and maximum charge before signing.
+        options.phlo_price = status.min_phlo_price;
         api.deploy(&rholang, &options).await.map_err(|e| {
             self.alerts.notify(
                 AlertEvent::new(AlertKind::TransferDeployFailed, e.to_string())

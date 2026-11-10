@@ -811,7 +811,7 @@ checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 [[package]]
 name = "crypto"
 version = "0.1.0"
-source = "git+https://github.com/F1R3FLY-io/f1r3node-rust.git?rev=5dafbc37dad3ebf3da810641fc0d8cecd5a1127b#5dafbc37dad3ebf3da810641fc0d8cecd5a1127b"
+source = "git+https://github.com/F1R3FLY-io/f1r3node-rust.git?rev=0ccc315d84b32d668e8db49cd56ba3c576693e15#0ccc315d84b32d668e8db49cd56ba3c576693e15"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -2122,11 +2122,13 @@ dependencies = [
 [[package]]
 name = "models"
 version = "0.1.0"
-source = "git+https://github.com/F1R3FLY-io/f1r3node-rust.git?rev=5dafbc37dad3ebf3da810641fc0d8cecd5a1127b#5dafbc37dad3ebf3da810641fc0d8cecd5a1127b"
+source = "git+https://github.com/F1R3FLY-io/f1r3node-rust.git?rev=0ccc315d84b32d668e8db49cd56ba3c576693e15#0ccc315d84b32d668e8db49cd56ba3c576693e15"
 dependencies = [
  "crypto",
  "hex",
  "itertools",
+ "num-bigint",
+ "num-traits",
  "pathmap",
  "proptest",
  "proptest-derive",
@@ -2194,7 +2196,7 @@ dependencies = [
 
 [[package]]
 name = "node_cli"
-version = "0.2.9"
+version = "0.2.7"
 dependencies = [
  "blake2",
  "bs58",
@@ -3117,7 +3119,7 @@ dependencies = [
 [[package]]
 name = "rho-pure-eval"
 version = "0.1.0"
-source = "git+https://github.com/F1R3FLY-io/f1r3node-rust.git?rev=5dafbc37dad3ebf3da810641fc0d8cecd5a1127b#5dafbc37dad3ebf3da810641fc0d8cecd5a1127b"
+source = "git+https://github.com/F1R3FLY-io/f1r3node-rust.git?rev=0ccc315d84b32d668e8db49cd56ba3c576693e15#0ccc315d84b32d668e8db49cd56ba3c576693e15"
 dependencies = [
  "imbl",
  "models",
@@ -3130,7 +3132,7 @@ dependencies = [
 [[package]]
 name = "rholang"
 version = "0.1.0"
-source = "git+https://github.com/F1R3FLY-io/f1r3node-rust.git?rev=5dafbc37dad3ebf3da810641fc0d8cecd5a1127b#5dafbc37dad3ebf3da810641fc0d8cecd5a1127b"
+source = "git+https://github.com/F1R3FLY-io/f1r3node-rust.git?rev=0ccc315d84b32d668e8db49cd56ba3c576693e15#0ccc315d84b32d668e8db49cd56ba3c576693e15"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3183,7 +3185,7 @@ dependencies = [
 [[package]]
 name = "rholang-parser"
 version = "0.1.0"
-source = "git+https://github.com/F1R3FLY-io/rholang-rs?rev=527af8afb37f6cad470516fe316076f120b9c353#527af8afb37f6cad470516fe316076f120b9c353"
+source = "git+https://github.com/F1R3FLY-io/rholang-rs?rev=4e22339eca493c5ce3d14386c2af67af74bfffa2#4e22339eca493c5ce3d14386c2af67af74bfffa2"
 dependencies = [
  "bitvec",
  "nonempty-collections",
@@ -3198,7 +3200,7 @@ dependencies = [
 [[package]]
 name = "rholang-tree-sitter"
 version = "0.1.2"
-source = "git+https://github.com/F1R3FLY-io/rholang-rs?rev=527af8afb37f6cad470516fe316076f120b9c353#527af8afb37f6cad470516fe316076f120b9c353"
+source = "git+https://github.com/F1R3FLY-io/rholang-rs?rev=4e22339eca493c5ce3d14386c2af67af74bfffa2#4e22339eca493c5ce3d14386c2af67af74bfffa2"
 dependencies = [
  "cc",
  "tree-sitter-language",
@@ -3207,7 +3209,7 @@ dependencies = [
 [[package]]
 name = "rholang-tree-sitter-proc-macro"
 version = "0.1.2"
-source = "git+https://github.com/F1R3FLY-io/rholang-rs?rev=527af8afb37f6cad470516fe316076f120b9c353#527af8afb37f6cad470516fe316076f120b9c353"
+source = "git+https://github.com/F1R3FLY-io/rholang-rs?rev=4e22339eca493c5ce3d14386c2af67af74bfffa2#4e22339eca493c5ce3d14386c2af67af74bfffa2"
 dependencies = [
  "anyhow",
  "quote",
@@ -3233,7 +3235,7 @@ dependencies = [
 [[package]]
 name = "rspace_plus_plus"
 version = "0.1.0"
-source = "git+https://github.com/F1R3FLY-io/f1r3node-rust.git?rev=5dafbc37dad3ebf3da810641fc0d8cecd5a1127b#5dafbc37dad3ebf3da810641fc0d8cecd5a1127b"
+source = "git+https://github.com/F1R3FLY-io/f1r3node-rust.git?rev=0ccc315d84b32d668e8db49cd56ba3c576693e15#0ccc315d84b32d668e8db49cd56ba3c576693e15"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -3628,7 +3630,7 @@ dependencies = [
 [[package]]
 name = "shared"
 version = "0.1.0"
-source = "git+https://github.com/F1R3FLY-io/f1r3node-rust.git?rev=5dafbc37dad3ebf3da810641fc0d8cecd5a1127b#5dafbc37dad3ebf3da810641fc0d8cecd5a1127b"
+source = "git+https://github.com/F1R3FLY-io/f1r3node-rust.git?rev=0ccc315d84b32d668e8db49cd56ba3c576693e15#0ccc315d84b32d668e8db49cd56ba3c576693e15"
 dependencies = [
  "axum",
  "bincode",
@@ -3642,6 +3644,7 @@ dependencies = [
  "indexmap",
  "lz4_flex",
  "metrics",
+ "num-bigint",
  "prost",
  "rand 0.9.5",
  "serde",

@@ -31,9 +31,16 @@ Unavailable, malformed, negative, or inexact balance responses do not enable cla
 Balance reads retain the system-vault exploratory query and the configured
 `EXPLORATORY_RETRY_BUDGET_SEC` for observer capacity refusals.
 
-The Rust-client submodule now selects ASI client #5 at
-`b676e1d053dfdc82d3be10c3f5e76a22e86052b9`. This is the classic signing / node
-#896 profile. Node #881 requires a separate binding and signing migration.
+The Rust-client submodule selects [upstream Rust client PR #88](https://github.com/F1R3FLY-io/rust-client/pull/88) at
+`ce2b5fcfe3012c07ea11442dcc072cd7ba6d7d2f`, with protocol dependencies pinned
+to node `0ccc315d84b32d668e8db49cd56ba3c576693e15`. It supports node #881's
+uint256 deploy prices and signing format, including #896's exact amounts and
+#947's string-valued prices. The selected validator and observer must use this
+uint256 protocol; nodes using the previous monetary wire format are unsupported.
+The ASI system-vault transfer ABI and exact balance query remain in use.
+`minPhloPrice` and deploy-detail `phloPrice` are canonical decimal JSON strings.
+Prices must be positive and both the price and `DEPLOY_PHLO_LIMIT * minPhloPrice`
+must fit uint256; the client checks these bounds before signing.
 Build with the committed `nightly-2026-02-09` toolchain and `Cargo.lock`.
 
 The backend server is configured through environment variables defined in a `.env` file. All configuration is loaded at startup and validated before the server starts accepting requests.
@@ -511,7 +518,8 @@ FAUCET_MAX_BALANCE=100
 
 This distributes `10.000000000000000001` ASI to an address whose observed
 pre-claim balance is below 100 ASI. Transfer amounts and ceilings are bounded
-by uint256. Fee prices and signed deploy fields retain the classic client widths.
+by uint256. Fee prices also support uint256 and use exactly 32 big-endian bytes
+at protobuf field 15 in signed deploys; the former field 7 is no longer used.
 
 ---
 
