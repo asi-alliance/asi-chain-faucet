@@ -14,10 +14,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-defaults:
-  run:
-    shell: bash
-
 jobs:
   backend-tests:
     name: Backend tests
@@ -25,6 +21,7 @@ jobs:
     timeout-minutes: 30
     defaults:
       run:
+        shell: bash
         working-directory: server
     env:
       CARGO_BUILD_JOBS: 2
@@ -44,10 +41,11 @@ jobs:
             libssl-dev make perl pkg-config protobuf-compiler
       - name: Install repository Rust toolchain
         run: |
-          rustup toolchain install --profile minimal --component rustfmt --no-self-update
+          rustup toolchain install --profile minimal --no-self-update
           toolchain="$(rustup show active-toolchain)"
-          echo "$toolchain"
-          echo "RUSTUP_TOOLCHAIN=${toolchain%% *}" >> "$GITHUB_ENV"
+          toolchain="${toolchain%% *}"
+          rustup component add --toolchain "$toolchain" rustfmt
+          echo "RUSTUP_TOOLCHAIN=$toolchain" >> "$GITHUB_ENV"
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: server -> target
@@ -72,6 +70,7 @@ jobs:
     timeout-minutes: 10
     defaults:
       run:
+        shell: bash
         working-directory: web
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
