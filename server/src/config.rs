@@ -139,8 +139,8 @@ impl AppConfig {
 
         let sockets: Vec<NodeSocket> = hosts
             .into_iter()
-            .zip(grpc_ports.into_iter())
-            .zip(http_ports.into_iter())
+            .zip(grpc_ports)
+            .zip(http_ports)
             .map(|((host, grpc_port), http_port)| NodeSocket {
                 host,
                 grpc_port,
@@ -186,6 +186,10 @@ impl AppConfig {
 
         if self.faucet_amount == 0 {
             return Err("FAUCET_AMOUNT must be greater than 0".into());
+        }
+
+        if self.deploy_check_interval_sec == 0 || self.deploy_phlo_limit <= 0 {
+            return Err("Deploy check interval and phlo limit must be positive".into());
         }
 
         if self.alerts_enabled && self.mattermost_webhook_url.is_none() {

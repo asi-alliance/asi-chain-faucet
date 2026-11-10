@@ -73,6 +73,19 @@ Content-Type: application/json
 
 **Error Responses:**
 
+Failures after signing preserve the original `deploy_id` in the JSON body.
+Preparation failures have no deploy ID:
+
+| HTTP status | `error` | Meaning |
+|-------------|---------|---------|
+| 503 | `deploy_pool_busy` or `deploy_admission_busy` | The node explicitly refused admission; a later request may create a new transfer. |
+| 502 | `deploy_submission_unknown` | The response was missing, malformed, or lost. Check the returned ID before requesting another transfer. |
+| 400 | `deploy_rejected` | The node explicitly rejected the deploy. |
+| 502 | `FAUCET: Transfer failed` | The upstream node could not be reached or preparation failed before submission. |
+
+An empty node rejection envelope is an unknown outcome, not proof of rejection.
+The faucet never retries submission or signs a replacement automatically.
+
 Invalid address format (400 Bad Request):
 ```json
 {
@@ -91,10 +104,10 @@ Balance exceeds limit (400 Bad Request):
 }
 ```
 
-Transfer failed (400 Bad Request):
+Transfer rejected (400 Bad Request):
 ```json
 {
-  "error": "FAUCET: Transfer failed",
+  "error": "deploy_rejected",
   "details": "Insufficient funds in faucet wallet",
   "timestamp": "2025-10-29T12:34:56.789Z"
 }
@@ -122,17 +135,17 @@ Transfer failed (400 Bad Request):
 3. Check balance against faucet limit
 4. Select random validator node with availability check:
    - Nodes are shuffled randomly
-   - Each node is checked for availability via HTTP `/status` endpoint with 2 second timeout
+   - Each node is checked for availability via HTTP `/api/status` endpoint with a 5 second timeout
    - First available node is selected
    - Request fails if no nodes are reachable
 5. Initiate transfer using private key via node CLI
 6. Return deploy ID to client
 
-**Note on Transfer Timeout:** The transfer operation currently uses hardcoded timeout values (`max_wait: 60 seconds`, `check_interval: 5 seconds`) that differ from the configurable `DEPLOY_MAX_WAIT_SEC` and `DEPLOY_CHECK_INTERVAL_SEC` used in deploy status queries.
+**Note on Transfer Timeout:** Transfers return after submission without waiting for finalization. Node connections and individual requests have bounded timeouts (10 and 30 seconds respectively); observer capacity retries use `EXPLORATORY_RETRY_BUDGET_SEC`. There is no outer seven-second deadline cancelling an in-flight submission. `DEPLOY_MAX_WAIT_SEC` and `DEPLOY_CHECK_INTERVAL_SEC` apply to deploy status queries.
 
 **Response Time:**
 - Typical: 1-3 seconds
-- Maximum: 7 seconds (enforced by timeout middleware)
+- Bound: balance query, validator availability checks, tip preparation, and submission each use their own node-client timeouts.
 
 **Status Codes:**
 - `200 OK` - Transfer successfully initiated
@@ -201,7 +214,7 @@ Query failed (400 Bad Request):
 
 **Response Time:**
 - Typical: 100-200ms
-- Maximum: 7 seconds (enforced by timeout middleware)
+- Bound: `EXPLORATORY_RETRY_BUDGET_SEC` plus connection and individual query timeouts.
 
 **Status Codes:**
 - `200 OK` - Balance retrieved successfully
@@ -370,7 +383,7 @@ curl http://localhost:40470/deploy/d1f2e3b4a5c6789012345678901234567890abcdef12
 | HTTP Status | Error Type | Description |
 |-------------|------------|-------------|
 | 400 | Validation Error | Invalid input format or business rule violation |
-| 408 | Request Timeout | Request exceeded 7 second timeout |
+| 408 | Request Timeout | Deploy status query exceeded its 7 second route timeout |
 | 413 | Payload Too Large | Request body exceeds 1MB limit |
 | 500 | Internal Server Error | Server-side error during processing |
 

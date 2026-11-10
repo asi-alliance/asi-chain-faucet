@@ -4,8 +4,8 @@ use crate::utils::choose_random_node;
 use anyhow::{Context, Result};
 use node_cli::f1r3fly_api::DeployFinalizationStatus;
 use node_cli::utils::CryptoUtils;
-use node_cli::vault::{build_balance_query, build_transfer_rholang};
-use node_cli::F1r3flyApi;
+use node_cli::vault::build_transfer_rholang;
+use node_cli::{DeployOptions, Endpoint, F1r3flyApi, NodeHttp, SigningKey};
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, warn};
@@ -42,45 +42,56 @@ impl NodeCliService {
             }
         };
 
-        let api = F1r3flyApi::new(private_key_hex, &node.host, node.grpc_port)
-            .map_err(|e| anyhow::anyhow!("Failed to initialise deploy client: {}", e))?;
-
-        let sk = CryptoUtils::decode_private_key(private_key_hex)
-            .expect("key already validated by F1r3flyApi::new");
-        let pk_hex = CryptoUtils::serialize_public_key(&CryptoUtils::derive_public_key(&sk), false);
-        let from_address = CryptoUtils::generate_vault_address(&pk_hex)
-            .expect("valid key always produces a vault address");
-
-        let rholang = build_transfer_rholang(&from_address, to_address, self.config.faucet_amount);
-
-        api.deploy_with_phlo_limit_and_expiration(
-            &rholang,
-            self.config.deploy_phlo_limit,
-            "rholang",
-            0,
-        )
-        .await
-        .map_err(|e| {
-            self.alerts.notify(
-                AlertEvent::new(AlertKind::TransferDeployFailed, e.to_string())
-                    .with_context("to", to_address),
-            );
-            anyhow::anyhow!("Deploy failed: {}", e)
-        })
+        let key = SigningKey::from_hex(private_key_hex)?;
+        let api = F1r3flyApi::new(endpoint(&node.host, node.grpc_port)?)?;
+        let pk_hex = CryptoUtils::serialize_public_key(&key.public_key(), false);
+        let from_address = CryptoUtils::generate_vault_address(&pk_hex)?;
+        let amount = self
+            .config
+            .faucet_amount
+            .to_string()
+            .parse()
+            .context("invalid faucet amount")?;
+        let rholang = build_transfer_rholang(&from_address, to_address, &amount)?;
+        let phlo_limit = u64::try_from(self.config.deploy_phlo_limit)
+            .context("DEPLOY_PHLO_LIMIT must be nonnegative")?;
+        let signed = api
+            .prepare(
+                &rholang,
+                &DeployOptions::default().with_phlo_limit(phlo_limit),
+            )
+            .await?
+            .sign(key.secret_key());
+        let id = signed.id();
+        match api.submit(&signed).await {
+            Ok(id) => Ok(id),
+            Err(error) => {
+                let failure = TransferSubmissionError::from_client(id, error);
+                if !matches!(failure, TransferSubmissionError::Admission { .. }) {
+                    self.alerts.notify(
+                        AlertEvent::new(AlertKind::TransferDeployFailed, failure.to_string())
+                            .with_context("to", to_address),
+                    );
+                }
+                Err(failure.into())
+            }
+        }
     }
 
     pub async fn get_balance(&self, address: &str) -> Result<String> {
-        let rholang_query = build_balance_query(address);
-        let api =
-            F1r3flyApi::new_readonly(&self.config.observer_host, self.config.observer_grpc_port)
-                .with_exploratory_retry_budget(Duration::from_secs(
-                    self.config.exploratory_retry_budget_sec,
-                ));
-        let (balance, _block_info, _cost) = api
+        let rholang_query = build_balance_query(address)?;
+        let api = F1r3flyApi::new(endpoint(
+            &self.config.observer_host,
+            self.config.observer_grpc_port,
+        )?)?
+        .with_exploratory_retry_budget(Duration::from_secs(
+            self.config.exploratory_retry_budget_sec,
+        ));
+        let result = api
             .exploratory_deploy(&rholang_query, None, false)
             .await
             .map_err(|e| anyhow::Error::msg(e.to_string()))?;
-        Ok(balance)
+        Ok(result.value()?.as_amount()?.to_string())
     }
 
     pub async fn get_deploy_info(&self, id: String) -> Result<DeployInfo> {
@@ -90,9 +101,12 @@ impl NodeCliService {
 
         let mut latest = None;
         for attempt in 0..max_attempts {
-            let api = F1r3flyApi::new_readonly(&self.config.observer_host, 0);
+            let api = NodeHttp::new(endpoint(
+                &self.config.observer_host,
+                self.config.observer_http_port,
+            )?)?;
             let lib_status = api
-                .deploy_finalization_status(&id, self.config.observer_http_port)
+                .deploy_finalization_status(&id)
                 .await
                 .map_err(|e| anyhow::Error::msg(e.to_string()))?
                 .context("deploy-finalization-status endpoint not available")?;
@@ -126,11 +140,8 @@ impl NodeCliService {
 
     /// Read `/api/deploy/{id}` and return its `(systemDeployError, errored)`.
     /// A missing detail is not fatal: the finalization endpoint still answers.
-    async fn fetch_deploy_error(&self, id: &str, api: &F1r3flyApi<'_>) -> (Option<String>, bool) {
-        match api
-            .get_deploy_detail(id, self.config.observer_http_port)
-            .await
-        {
+    async fn fetch_deploy_error(&self, id: &str, api: &NodeHttp) -> (Option<String>, bool) {
+        match api.get_deploy_detail(id).await {
             Ok(Some(detail)) => {
                 // In previous versions node emits `systemDeployError` as an empty string on
                 // success; only a non-blank message is a real failure.
@@ -180,5 +191,119 @@ impl NodeCliService {
                 .with_context("deploy_id", id)
                 .with_context("state", status.state.clone()),
         );
+    }
+}
+
+fn endpoint(host: &str, port: u16) -> node_cli::Result<Endpoint> {
+    Endpoint::parse(&format!("http://{host}:{port}"))
+}
+
+#[derive(Debug)]
+pub enum TransferSubmissionError {
+    Admission {
+        deploy_id: String,
+        code: String,
+    },
+    Unknown {
+        deploy_id: String,
+        cause: node_cli::Error,
+    },
+    Rejected {
+        deploy_id: String,
+        cause: node_cli::Error,
+    },
+}
+
+impl TransferSubmissionError {
+    fn from_client(deploy_id: String, cause: node_cli::Error) -> Self {
+        match cause {
+            node_cli::Error::DeployAdmissionRefused { reason, .. } => Self::Admission {
+                deploy_id,
+                code: reason.code().to_string(),
+            },
+            cause
+                if matches!(&cause, node_cli::Error::NodeRejected { message, .. }
+                    if !message.trim().is_empty()) =>
+            {
+                Self::Rejected { deploy_id, cause }
+            }
+            cause => Self::Unknown { deploy_id, cause },
+        }
+    }
+    pub fn deploy_id(&self) -> &str {
+        match self {
+            Self::Admission { deploy_id, .. }
+            | Self::Unknown { deploy_id, .. }
+            | Self::Rejected { deploy_id, .. } => deploy_id,
+        }
+    }
+}
+
+impl std::fmt::Display for TransferSubmissionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Admission { deploy_id, code } => write!(f, "Deploy {deploy_id} not accepted ({code}); please try again later"),
+            Self::Unknown { deploy_id, cause } => write!(f, "Submission outcome unknown for deploy {deploy_id}: {cause}. Check this ID before requesting another transfer"),
+            Self::Rejected { deploy_id, cause } => write!(f, "Deploy {deploy_id} rejected: {cause}"),
+        }
+    }
+}
+impl std::error::Error for TransferSubmissionError {}
+
+// Preserve the existing system-vault balance ABI while migrating the client.
+fn build_balance_query(address: &str) -> node_cli::Result<String> {
+    node_cli::vault::validate_address(address)?;
+    Ok(format!(
+        r#"new return, rl(`rho:registry:lookup`), systemVaultCh, vaultCh, balanceCh in {{
+ rl!(`rho:vault:system`, *systemVaultCh) |
+ for (@(_, SystemVault) <- systemVaultCh) {{
+ @SystemVault!("findOrCreate", "{address}", *vaultCh) |
+ for (@either <- vaultCh) {{
+ match either {{
+ (true, vault) => {{
+ @vault!("balance", *balanceCh) |
+ for (@balance <- balanceCh) {{ return!(balance) }}
+ }}
+ (false, _) => return!(-1)
+ }}
+ }}
+ }}
+}}"#
+    ))
+}
+
+#[cfg(test)]
+mod submission_tests {
+    use super::*;
+    #[test]
+    fn only_typed_admission_is_a_known_transient_refusal() {
+        for reason in [
+            node_cli::DeployAdmissionReason::PoolBusy,
+            node_cli::DeployAdmissionReason::AdmissionBusy,
+        ] {
+            let error = TransferSubmissionError::from_client(
+                "signed-id".into(),
+                node_cli::Error::DeployAdmissionRefused {
+                    deploy_id: "signed-id".into(),
+                    reason,
+                    message: "busy".into(),
+                },
+            );
+            assert!(
+                matches!(&error, TransferSubmissionError::Admission { code, .. } if code == reason.code())
+            );
+            assert_eq!(error.deploy_id(), "signed-id");
+        }
+        let error = TransferSubmissionError::from_client(
+            "signed-id".into(),
+            node_cli::Error::Http {
+                url: "http://127.0.0.1".into(),
+                status: 503,
+                code: None,
+                message: "unavailable".into(),
+            },
+        );
+        assert!(matches!(error, TransferSubmissionError::Unknown { .. }));
+        assert_eq!(error.deploy_id(), "signed-id");
     }
 }

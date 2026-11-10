@@ -1,7 +1,7 @@
 use crate::{
     api::handlers::balance_handler,
     api::models::{ApiResult, BalanceResponse, ErrorResponse, TransferRequest, TransferResponse},
-    services::node_cli::NodeCliService,
+    services::node_cli::{NodeCliService, TransferSubmissionError},
     AppState,
 };
 use axum::{extract::State, http::StatusCode, response::Json, Json as RequestJson};
@@ -63,7 +63,7 @@ pub async fn transfer_handler(
     validate_address(&request.to_address).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::validation_error(e.as_str())),
+            Json(ErrorResponse::validation_error(&e.to_string())),
         )
     })?;
 
@@ -97,13 +97,69 @@ pub async fn transfer_handler(
                 "FAUCET: Transfer failed to {} with error {}",
                 request.to_address, e
             );
-            Err((
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse::new(
-                    "FAUCET: Transfer failed".to_string(),
-                    Some(e.to_string()),
-                )),
-            ))
+            Err(transfer_error_response(&e))
         }
+    }
+}
+
+fn transfer_error_response(error: &anyhow::Error) -> (StatusCode, Json<ErrorResponse>) {
+    let (status, code, deploy_id) = match error.downcast_ref::<TransferSubmissionError>() {
+        Some(failure @ TransferSubmissionError::Admission { code, .. }) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            code.as_str(),
+            Some(failure.deploy_id().to_string()),
+        ),
+        Some(failure @ TransferSubmissionError::Unknown { .. }) => (
+            StatusCode::BAD_GATEWAY,
+            "deploy_submission_unknown",
+            Some(failure.deploy_id().to_string()),
+        ),
+        Some(failure @ TransferSubmissionError::Rejected { .. }) => (
+            StatusCode::BAD_REQUEST,
+            "deploy_rejected",
+            Some(failure.deploy_id().to_string()),
+        ),
+        None => (StatusCode::BAD_GATEWAY, "FAUCET: Transfer failed", None),
+    };
+    let mut body = ErrorResponse::new(code.to_string(), Some(error.to_string()));
+    if let Some(id) = deploy_id {
+        body = body.with_deploy_id(id);
+    }
+    (status, Json(body))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explicit_admission_refusals_retain_the_exact_code_and_id() {
+        for code in ["deploy_pool_busy", "deploy_admission_busy"] {
+            let error = anyhow::Error::new(TransferSubmissionError::Admission {
+                deploy_id: "original-id".into(),
+                code: code.into(),
+            });
+            let (status, Json(body)) = transfer_error_response(&error);
+            assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+            assert_eq!(body.error, code);
+            assert_eq!(body.deploy_id.as_deref(), Some("original-id"));
+            assert!(body.details.unwrap().contains("not accepted"));
+        }
+    }
+
+    #[test]
+    fn unknown_results_are_never_presented_as_admission_refusals() {
+        let error = anyhow::Error::new(TransferSubmissionError::Unknown {
+            deploy_id: "original-id".into(),
+            cause: node_cli::Error::Decode {
+                what: "deploy response",
+                detail: "missing".into(),
+            },
+        });
+        let (status, Json(body)) = transfer_error_response(&error);
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert_eq!(body.error, "deploy_submission_unknown");
+        assert_eq!(body.deploy_id.as_deref(), Some("original-id"));
+        assert!(body.details.unwrap().contains("outcome unknown"));
     }
 }
