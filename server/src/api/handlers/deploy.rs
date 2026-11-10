@@ -75,3 +75,82 @@ pub async fn deploy_info_handler(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use node_cli::f1r3fly_api::DeployFinalizationStatus;
+    use serde_json::json;
+
+    fn deploy_info(state: &str) -> DeployInfo {
+        DeployInfo {
+            finalization: DeployFinalizationStatus {
+                state: state.to_string(),
+                rejection_count: 0,
+                latest_block_hash: None,
+            },
+            system_deploy_error: None,
+            errored: false,
+        }
+    }
+
+    #[test]
+    fn pending_and_finalized_responses_omit_error_messages() {
+        for (state, expected) in [("Pending", "Deploying"), ("Finalized", "Finalized")] {
+            let response = to_status_response(&deploy_info(state));
+            assert_eq!(
+                serde_json::to_value(response).unwrap(),
+                json!({"status": expected})
+            );
+        }
+    }
+
+    #[test]
+    fn failed_and_expired_deploys_expose_failure_reasons() {
+        for (state, reason) in [
+            ("Failed", "Deploy execution failed"),
+            ("Expired", "Deploy expired"),
+        ] {
+            let response = to_status_response(&deploy_info(state));
+            assert_eq!(
+                serde_json::to_value(response).unwrap(),
+                json!({"status": "DeployError", "msg": reason})
+            );
+        }
+    }
+
+    #[test]
+    fn system_payment_error_overrides_finalized_success_and_generic_errors() {
+        for errored in [false, true] {
+            let mut info = deploy_info("Finalized");
+            info.errored = errored;
+            info.system_deploy_error =
+                Some("Deploy payment failed: Insufficient funds".to_string());
+            assert_eq!(
+                serde_json::to_value(to_status_response(&info)).unwrap(),
+                json!({
+                    "status": "DeployError",
+                    "msg": "Deploy payment failed: Insufficient funds"
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn execution_error_cannot_be_reported_as_finalized_success() {
+        let mut info = deploy_info("Finalized");
+        info.errored = true;
+        assert_eq!(
+            serde_json::to_value(to_status_response(&info)).unwrap(),
+            json!({"status": "DeployError", "msg": "Deploy execution errored"})
+        );
+    }
+
+    #[test]
+    fn unrecognized_node_state_is_not_reported_as_success() {
+        assert_eq!(
+            serde_json::to_value(to_status_response(&deploy_info("Unexpected"))).unwrap(),
+            json!({"status": "Unknown", "msg": "Unknown deploy state: Unexpected"})
+        );
+    }
+}

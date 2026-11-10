@@ -19,7 +19,7 @@ For complete project documentation, see the [main README](../README.md) in the r
 
 ### Prerequisites
 
-- Rust 1.77 or higher
+- Rust nightly selected by [rust-toolchain.toml](rust-toolchain.toml)
 - Protocol Buffers Compiler: `apt install protobuf-compiler`
 
 ### Setup
