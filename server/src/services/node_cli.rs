@@ -221,7 +221,12 @@ impl TransferSubmissionError {
                 deploy_id,
                 code: reason.code().to_string(),
             },
-            cause @ node_cli::Error::NodeRejected { .. } => Self::Rejected { deploy_id, cause },
+            cause
+                if matches!(&cause, node_cli::Error::NodeRejected { message, .. }
+                    if !message.trim().is_empty()) =>
+            {
+                Self::Rejected { deploy_id, cause }
+            }
             cause => Self::Unknown { deploy_id, cause },
         }
     }
