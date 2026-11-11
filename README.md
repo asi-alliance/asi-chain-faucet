@@ -71,6 +71,13 @@ The ASI Chain Faucet consists of two main components working together to provide
 
 ### Running the Backend
 
+The client submodule uses [asi-alliance/asi-chain-client, branch `rust-dev`](https://github.com/asi-alliance/asi-chain-client/tree/rust-dev),
+pinned to `5d1c9b4d12e33ec8b64a74a28df196ef03478e73` (2026-11-11). Builds use
+that exact gitlink; `branch = rust-dev` records the source branch. Phlo prices
+must fit positive `i64` and are encoded as uint256 protobuf values.
+For existing clones, run `git submodule sync -- server/rust-client` before
+updating submodules.
+
 ```bash
 # Clone the repository
 git clone https://github.com/asi-alliance/asi-chain-faucet.git
