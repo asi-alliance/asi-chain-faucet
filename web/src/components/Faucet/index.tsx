@@ -25,6 +25,7 @@ export interface IFaucetProps {
 
 const Faucet = ({ address }: IFaucetProps): ReactElement => {
     const [errorsList, setErrorsList] = useState<TValidationMessage[]>([]);
+    const [eligibilityCeiling, setEligibilityCeiling] = useState<string | null>(null);
     const [addressBalance, setAddressBalance] = useState<string | null>(null);
     const [isAddressBalanceFetching, setIsAddressBalanceFetching] =
         useState<boolean>(false);
@@ -66,6 +67,7 @@ const Faucet = ({ address }: IFaucetProps): ReactElement => {
             const formattedBalance = formatAtomic(balance, config.decimals);
 
             setAddressBalance(formattedBalance);
+            setEligibilityCeiling(formatAtomic(config.ceiling.toString(), config.decimals));
 
             if (isEligible(balance, config.ceiling)) {
                 setFaucetPhase(FaucetPhases.READY_TO_CLAIM);
@@ -156,6 +158,10 @@ const Faucet = ({ address }: IFaucetProps): ReactElement => {
                         </div>
 
                         <div className="faucet-initiator">
+                            {eligibilityCeiling !== null && (
+                                <p>Balance before claiming must be below {eligibilityCeiling} ASI.
+                                    One claim at a time; retries resume a pending claim.</p>
+                            )}
                             <button
                                 onClick={faucet}
                                 disabled={

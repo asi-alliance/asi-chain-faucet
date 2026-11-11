@@ -389,3 +389,17 @@ For development information, see [DEVELOPMENT.md](DEVELOPMENT.md).
 Amounts are atomic-unit strings. Eligibility is strictly below the pre-claim
 ceiling. The response contains no signing or service credentials.
 
+
+### Claim reconciliation
+
+`GET /config` also returns `"eligibility_policy":"strict_pre_claim_threshold"`.
+The balance before claiming must be strictly below the atomic ceiling; the
+resulting balance may exceed it. Only one deploy per network/recipient may be
+pending. `POST /transfer` retries resume the existing signed deploy and return
+its ID, including after an uncertain submission or service restart.
+
+A concurrent active request returns 409 (retry shortly). Reconciliation or
+journal failures return 503 and preserve existing reservations. Node-reported
+terminal states are reconciled before admitting another distribution; finalized
+claims require an updated finalized balance. See CONFIGURATION.md for required
+persistent storage and network namespace settings.

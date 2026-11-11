@@ -10,6 +10,7 @@ pub struct AppState {
     pub config: AppConfig,
     pub start_time: Instant,
     pub alerts: Arc<AlertService>,
+    pub claims: Arc<crate::services::claims::ClaimStore>,
 }
 
 pub struct Application {
@@ -25,10 +26,16 @@ impl Application {
 
         let alerts = AlertService::new(&config);
 
+        let claims = Arc::new(crate::services::claims::ClaimStore::open(
+            &config.claims_directory,
+            &config.network_id,
+        )?);
+
         let state = AppState {
             config: config.clone(),
             start_time: Instant::now(),
             alerts,
+            claims,
         };
 
         let router = create_router(state);

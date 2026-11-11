@@ -4,6 +4,13 @@ services:
     image: asi-chain-faucet-server:latest
     env_file:
       - .env
+    environment:
+      FAUCET_CLAIMS_DIR: /data/claims
+    volumes:
+      - faucet-claims:/data/claims
     ports:
       - "${SERVER_PORT}:${SERVER_PORT}"
     restart: unless-stopped
+
+volumes:
+  faucet-claims:

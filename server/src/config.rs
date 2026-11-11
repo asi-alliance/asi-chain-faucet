@@ -32,6 +32,8 @@ pub struct AppConfig {
     pub faucet_max_balance: num_bigint::BigUint,
     pub native_token_decimals: u32,
     pub private_key: Option<Secret>,
+    pub claims_directory: std::path::PathBuf,
+    pub network_id: String,
 
     pub node_sockets: Vec<NodeSocket>,
     /// `host:http_port` list, rendered once at startup for alert context.
@@ -89,6 +91,10 @@ impl AppConfig {
             faucet_max_balance,
             native_token_decimals,
             private_key: Self::parse_env_secret("PRIVATE_KEY"),
+            claims_directory: env::var("FAUCET_CLAIMS_DIR")
+                .unwrap_or_else(|_| ".faucet-claims".into())
+                .into(),
+            network_id: env::var("FAUCET_NETWORK_ID").unwrap_or_else(|_| "default".into()),
 
             node_sockets,
             node_hosts_display,
