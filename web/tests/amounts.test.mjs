@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { decimalToAtomic, formatAtomic, parseAtomic, isEligible, UINT256_MAX } from '../src/utils/amounts.ts';
+import { decimalToAtomic, formatDisplayAtomic, formatAtomic, parseAtomic, isEligible, UINT256_MAX } from '../src/utils/amounts.ts';
 
 for (const decimals of [8, 18]) {
     test(`exact amounts and ceiling boundary at ${decimals} decimals`, () => {
@@ -23,3 +23,15 @@ test('wide amounts and invalid balance responses fail without rounding', () => {
     for (const decimals of [-1, 19, 1.5, NaN]) assert.throws(() => formatAtomic('1', decimals));
     assert.throws(() => decimalToAtomic('0.000000001', 8));
 });
+
+for (const decimals of [8, 18]) {
+    test(`20,000 ASI display and eligibility agree at ${decimals} decimals`, () => {
+        const ceiling = decimalToAtomic('20000', decimals);
+        assert.equal(formatDisplayAtomic(ceiling.toString(), decimals), '20,000');
+        assert.equal(formatDisplayAtomic(decimalToAtomic('30000', decimals).toString(), decimals), '30,000');
+        assert.equal(isEligible((ceiling - 1n).toString(), ceiling), true);
+        assert.equal(isEligible(ceiling.toString(), ceiling), false);
+        assert.equal(isEligible(decimalToAtomic('30000', decimals).toString(), ceiling), false);
+        assert.equal(formatDisplayAtomic(decimalToAtomic('10000.00000001', decimals).toString(), decimals), '10,000.00000001');
+    });
+}

@@ -38,3 +38,10 @@ export function formatAtomic(value: unknown, decimals: number): string {
 export function isEligible(value: unknown, ceiling: bigint): boolean {
     return parseAtomic(value) < ceiling;
 }
+
+// Group whole tokens without converting exact amounts to floating point.
+export function formatDisplayAtomic(value: unknown, decimals: number): string {
+    const [whole, fraction] = formatAtomic(value, decimals).split(".");
+    const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return fraction ? `${grouped}.${fraction}` : grouped;
+}

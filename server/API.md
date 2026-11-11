@@ -108,7 +108,7 @@ Transfer failed (400 Bad Request):
    - Only alphanumeric characters allowed
 
 2. **Balance Check:**
-   - Recipient balance must be strictly below `FAUCET_MAX_BALANCE`, configured in whole tokens (historical default: 2,000,000,000,000 ASI)
+   - Recipient balance must be strictly below `FAUCET_MAX_BALANCE`, configured in whole tokens (default: 20,000 ASI)
    - Balance checked before transfer is initiated
 
 3. **Amount:**

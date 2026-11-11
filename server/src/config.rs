@@ -82,7 +82,7 @@ impl AppConfig {
             &env::var("FAUCET_AMOUNT").unwrap_or_else(|_| "1000000000000".into()),
         )?;
         let faucet_max_balance = node_cli::vault::tokens_to_dust(
-            &env::var("FAUCET_MAX_BALANCE").unwrap_or_else(|_| "2000000000000".into()),
+            &env::var("FAUCET_MAX_BALANCE").unwrap_or_else(|_| "20000".into()),
             native_token_decimals,
         )?;
 
@@ -252,6 +252,21 @@ mod amount_tests {
             assert!(is_eligible(&(&ceiling - 1u32).to_string(), &ceiling).unwrap());
             assert!(!is_eligible(&ceiling.to_string(), &ceiling).unwrap());
             assert!(!is_eligible(&(&ceiling + 1u32).to_string(), &ceiling).unwrap());
+        }
+    }
+
+    #[test]
+    fn twenty_thousand_token_threshold_rejects_thirty_thousand() {
+        for decimals in [8, 18] {
+            let ceiling = tokens_to_dust("20000", decimals).unwrap();
+            assert!(is_eligible(&(&ceiling - 1u32).to_string(), &ceiling).unwrap());
+            for tokens in ["20000", "30000"] {
+                assert!(!is_eligible(
+                    &tokens_to_dust(tokens, decimals).unwrap().to_string(),
+                    &ceiling
+                )
+                .unwrap());
+            }
         }
     }
 

@@ -20,8 +20,8 @@ It accepts an exact decimal token string and scales it once using configured
 precision. Eligibility is strictly `balance < ceiling`; equality is ineligible.
 The threshold applies to the balance before distribution, not the resulting
 post-transfer balance. It is not a cumulative claim or rate limit.
-The historical defaults remain unchanged. Review them explicitly when changing
-network precision. Invalid or overflowing monetary configuration fails startup.
+The default eligibility ceiling is 20,000 whole ASI tokens. Review monetary
+settings explicitly when changing network precision. Invalid or overflowing monetary configuration fails startup.
 
 `GET /config` exposes only native precision, atomic distribution amount, and
 atomic eligibility ceiling as exact JSON values. The frontend reads these
@@ -199,7 +199,7 @@ FAUCET_AMOUNT=1000000000000  # Send 10,000 ASI per request
 #### FAUCET_MAX_BALANCE
 
 ```bash
-FAUCET_MAX_BALANCE=2000000000000
+FAUCET_MAX_BALANCE=20000
 ```
 
 **Description:** Pre-claim eligibility ceiling in whole ASI tokens. A balance equal to the ceiling is ineligible.
@@ -208,13 +208,13 @@ FAUCET_MAX_BALANCE=2000000000000
 
 **Unit:** Whole ASI tokens. The server's historical whole-token interpretation is retained.
 
-**Default:** 2000000000000
+**Default:** 20000
 
 **Purpose:** Checks the observed balance before a claim. Durable pending-claim reconciliation is separate (see the claim reservations section below), as is rate limiting.
 
 **Example:**
 ```bash
-FAUCET_MAX_BALANCE=20000  # Addresses with 20,000+ ASI are ineligible; explicitly overrides the historical default
+FAUCET_MAX_BALANCE=20000  # Addresses with 20,000+ ASI are ineligible
 ```
 
 ---
@@ -532,7 +532,7 @@ Create a `.env` file in the `server/` directory:
 ```bash
 # Faucet Configuration
 FAUCET_AMOUNT=1000000000000
-FAUCET_MAX_BALANCE=2000000000000
+FAUCET_MAX_BALANCE=20000
 PRIVATE_KEY=<your_private_key>
 
 # Validator Nodes
@@ -761,3 +761,10 @@ the reservation. Initial balance reads retain the exploratory API and its
 configured capacity retry budget. New admission returns 400 if ineligible,
 or 503 if reconciliation/storage is unavailable. No background process or
 rate-limit timeout clears reservations.
+
+
+When upgrading an existing installation, set `FAUCET_MAX_BALANCE=20000` in its
+`.env` explicitly. The old example value `2000000000000` means two trillion
+whole ASI tokens, not 20,000 tokens in atomic units. This environment variable
+continues to use whole tokens at both supported precisions. Precision must
+match the actual node runtime; do not override it only in the frontend.
