@@ -210,7 +210,7 @@ FAUCET_MAX_BALANCE=2000000000000
 
 **Default:** 2000000000000
 
-**Purpose:** Checks the observed balance before a claim. This is not rate limiting or pending-claim reconciliation; see issue #44.
+**Purpose:** Checks the observed balance before a claim. Durable pending-claim reconciliation is separate (see the claim reservations section below), as is rate limiting.
 
 **Example:**
 ```bash
@@ -721,3 +721,43 @@ cargo run
 
 For API documentation, see [API.md](API.md).  
 For development information, see [DEVELOPMENT.md](DEVELOPMENT.md).
+
+## Durable claim reservations (issue #44)
+
+The ceiling is a strict **pre-claim eligibility threshold**, not a maximum
+post-distribution balance. `/config` reports `eligibility_policy` as
+`strict_pre_claim_threshold`; the UI displays the threshold. All monetary
+values and journal amounts remain exact uint256 atomic-unit decimal strings.
+Rate limiting is a separate infrastructure policy.
+
+`FAUCET_CLAIMS_DIR` defaults to `.faucet-claims`. It must be a persistent local
+filesystem with file locking, atomic rename and fsync support. Compose mounts
+`/data/claims` on the `faucet-claims` named volume. Preserve this directory when
+replacing a container or migrating the service. Do not run replicas with
+independent journals; processes on the same host must share the same directory.
+
+`FAUCET_NETWORK_ID` defaults to `default` and namespaces reservations. Set a
+stable unique ID for each chain, and keep it unchanged when rotating observer
+or validator endpoints, keys or monetary settings. Changing it bypasses the
+old namespace and must only be done when switching chains.
+
+Admission locks each network/recipient before reading balance. The exact signed
+deploy, its ID and distribution amount are atomically journaled and fsynced
+before submission. Concurrent requests return 409 while that lock is held.
+Pending retries return the existing ID and may resubmit the **same signed
+bytes**. An uncertain submission still returns that ID for status polling;
+it never opens another claim. Restart and cancellation retain the journal. The prepared validator endpoint is
+stored with the signed bytes, so retries use the same submission node.
+
+Reservations are reconciled on the next claim. Only node-reported `Failed`,
+`Expired` or `Finalized` permit a new eligibility check; elapsed wall time,
+missing status, observer failures and malformed journals never release a claim.
+For `Finalized`, reconciliation uses the observer HTTP balance API to verify
+the inclusion block and then read the current finalized balance at a height
+at least as high as inclusion. This permits later claims after spending while
+preventing stale pre-distribution balances from reopening eligibility. The
+observer must support `/api/balance/{address}`; inability to verify it keeps
+the reservation. Initial balance reads retain the exploratory API and its
+configured capacity retry budget. New admission returns 400 if ineligible,
+or 503 if reconciliation/storage is unavailable. No background process or
+rate-limit timeout clears reservations.

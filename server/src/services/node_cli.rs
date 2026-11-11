@@ -18,6 +18,14 @@ pub struct NodeCliService {
     alerts: Arc<AlertService>,
 }
 
+// Keep the submission endpoint with the signed bytes so the validator checked
+// for denomination and fee price during preparation is also the submission node.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct PreparedTransfer {
+    signed: Vec<u8>,
+    endpoint: String,
+}
+
 /// Deploy status enriched with the node's `/api/deploy/{id}` detail so callers
 /// can surface a `systemDeployError` (e.g. insufficient funds) that the
 /// finalization endpoint alone does not report.
@@ -32,7 +40,13 @@ impl NodeCliService {
         Self { config, alerts }
     }
 
-    pub async fn transfer_funds(&self, to_address: &str, private_key_hex: &str) -> Result<String> {
+    async fn prepare_transfer(&self, to_address: &str) -> Result<Vec<u8>> {
+        let private_key_hex = self
+            .config
+            .private_key
+            .as_ref()
+            .context("Missing signing key")?
+            .expose();
         let node = match choose_random_node(&self.config.node_sockets).await {
             Ok(node) => node,
             Err(e) => {
@@ -74,16 +88,22 @@ impl NodeCliService {
             .min_phlo_price
             .try_into()
             .context("Node minimum Phlo price exceeds the client i64 range")?;
-        api.deploy(&rholang, &options).await.map_err(|e| {
-            self.alerts.notify(
-                AlertEvent::new(AlertKind::TransferDeployFailed, e.to_string())
-                    .with_context("to", to_address),
-            );
-            anyhow::anyhow!("Deploy failed: {}", e)
-        })
+        let signed = api
+            .api()
+            .prepare(&rholang, &options)
+            .await?
+            .sign(SigningKey::from_hex(private_key_hex)?.secret_key());
+        Ok(serde_json::to_vec(&PreparedTransfer {
+            signed: signed.to_bytes(),
+            endpoint: format!("http://{}:{}", node.host, node.grpc_port),
+        })?)
     }
 
     pub async fn get_balance(&self, address: &str) -> Result<String> {
+        self.balance_at(address, None).await
+    }
+
+    async fn balance_at(&self, address: &str, block: Option<&str>) -> Result<String> {
         let rholang_query = build_balance_query(address)?;
         let api = F1r3flyApi::new(Endpoint::parse(&format!(
             "http://{}:{}",
@@ -92,7 +112,7 @@ impl NodeCliService {
         .with_exploratory_retry_budget(Duration::from_secs(
             self.config.exploratory_retry_budget_sec,
         ));
-        let result = api.exploratory_deploy(&rholang_query, None, false).await?;
+        let result = api.exploratory_deploy(&rholang_query, block, false).await?;
         Ok(result.value()?.as_amount()?.to_string())
     }
 
@@ -221,4 +241,133 @@ fn build_balance_query(address: &str) -> node_cli::Result<String> {
  }}
 }}"#
     ))
+}
+
+impl crate::services::claims::ClaimNode for NodeCliService {
+    async fn balance(&self, address: &str, block: Option<&str>) -> Result<String> {
+        if let Some(block) = block {
+            let observer = self.observer()?;
+            let inclusion = observer.balance(address, Some(block)).await?;
+            anyhow::ensure!(
+                inclusion.block.hash == block && inclusion.address == address,
+                "Observer returned another inclusion block"
+            );
+            let current = observer.balance(address, None).await?;
+            anyhow::ensure!(
+                current.block.number >= inclusion.block.number && current.address == address,
+                "Observer finalized balance is behind claim inclusion"
+            );
+            return Ok(current.dust.to_string());
+        }
+        self.balance_at(address, None).await
+    }
+    async fn prepare(&self, address: &str) -> Result<Vec<u8>> {
+        self.prepare_transfer(address).await
+    }
+    fn deploy_id(&self, signed: &[u8]) -> Result<String> {
+        let prepared: PreparedTransfer = serde_json::from_slice(signed)?;
+        Ok(node_cli::SignedDeploy::from_bytes(&prepared.signed)?.id())
+    }
+    async fn submit(&self, signed: &[u8]) -> Result<()> {
+        let prepared: PreparedTransfer = serde_json::from_slice(signed)?;
+        let deploy = node_cli::SignedDeploy::from_bytes(&prepared.signed)?;
+        let api = F1r3flyApi::new(Endpoint::parse(&prepared.endpoint)?)?;
+        api.submit(&deploy).await.map_err(|error| {
+            self.alerts.notify(
+                AlertEvent::new(AlertKind::TransferDeployFailed, error.to_string())
+                    .with_context("deploy_id", deploy.id()),
+            );
+            error
+        })?;
+        Ok(())
+    }
+    async fn status(&self, id: &str) -> Result<crate::services::claims::ClaimStatus> {
+        use crate::services::claims::ClaimStatus;
+        let Some(status) = self.observer()?.deploy_finalization_status(id).await? else {
+            // The journal may have committed immediately before a crash, without
+            // any submission. Resending those exact bytes is safe even if unknown.
+            return Ok(ClaimStatus::Pending);
+        };
+        Ok(match status.state.as_str() {
+            "Finalized" => ClaimStatus::Finalized(
+                status
+                    .latest_block_hash
+                    .filter(|hash| !hash.is_empty())
+                    .context("Missing finalized block hash")?,
+            ),
+            "Failed" => ClaimStatus::Failed,
+            "Expired" => ClaimStatus::Expired,
+            _ => ClaimStatus::Pending,
+        })
+    }
+}
+
+#[cfg(test)]
+mod claim_tests {
+    use super::*;
+    use crate::services::claims::{ClaimNode, ClaimStatus};
+    use axum::{extract::Query, routing::get, Json, Router};
+    use std::{
+        collections::HashMap,
+        sync::atomic::{AtomicI64, Ordering},
+    };
+
+    #[tokio::test]
+    async fn finalized_claim_rejects_lagging_observer_and_reads_later_spending() {
+        let height = Arc::new(AtomicI64::new(19));
+        let response_height = height.clone();
+        let app = Router::new().route("/api/balance/{address}", get(
+            move |Query(query): Query<HashMap<String, String>>| {
+                let response_height = response_height.clone();
+                async move {
+                    let pinned = query.contains_key("block_hash");
+                    Json(serde_json::json!({
+                        "address": "1111222222222222222222222222222222222222",
+                        "balance": if pinned { "10" } else { "9" },
+                        "blockHash": if pinned { "abcd" } else { "ef01" },
+                        "blockNumber": if pinned { 20 } else { response_height.load(Ordering::SeqCst) }
+                    }))
+                }
+            }
+        ));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let mut config = AppConfig::from_env().unwrap();
+        config.observer_host = "127.0.0.1".into();
+        config.observer_http_port = port;
+        let node = NodeCliService::new(config.clone(), AlertService::new(&config));
+        let address = "1111222222222222222222222222222222222222";
+        assert!(ClaimNode::balance(&node, address, Some("abcd"))
+            .await
+            .is_err());
+        height.store(21, Ordering::SeqCst);
+        assert_eq!(
+            ClaimNode::balance(&node, address, Some("abcd"))
+                .await
+                .unwrap(),
+            "9"
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn unknown_deploy_status_keeps_same_deploy_recoverable() {
+        let app = Router::new().route(
+            "/api/deploy-finalization-status/{id}",
+            get(|| async { axum::http::StatusCode::NOT_FOUND }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let mut config = AppConfig::from_env().unwrap();
+        config.observer_host = "127.0.0.1".into();
+        config.observer_http_port = port;
+        let node = NodeCliService::new(config.clone(), AlertService::new(&config));
+        assert!(matches!(
+            ClaimNode::status(&node, "abcd").await.unwrap(),
+            ClaimStatus::Pending
+        ));
+        server.abort();
+    }
 }
