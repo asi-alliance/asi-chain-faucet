@@ -1,3 +1,4 @@
 [submodule "rust-client"]
 	path = server/rust-client
-	url = https://github.com/F1R3FLY-io/rust-client.git
+	url = https://github.com/asi-alliance/asi-chain-client.git
+	branch = rust-dev

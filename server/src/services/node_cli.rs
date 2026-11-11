@@ -59,7 +59,7 @@ impl NodeCliService {
             .get_json("/api/status")
             .await?,
         )
-        .context("Invalid node status (uint256 protocol required)")?;
+        .context("Invalid node status")?;
         let decimals = status
             .native_token_decimals
             .context("Missing native token decimals")?;
@@ -69,8 +69,11 @@ impl NodeCliService {
         );
         let mut options =
             DeployOptions::default().with_phlo_limit(u64::try_from(self.config.deploy_phlo_limit)?);
-        // The client validates the uint256 price and maximum charge before signing.
-        options.phlo_price = status.min_phlo_price;
+        // rust-dev accepts an i64 price and encodes it as 32 bytes for signing.
+        options.phlo_price = status
+            .min_phlo_price
+            .try_into()
+            .context("Node minimum Phlo price exceeds the client i64 range")?;
         api.deploy(&rholang, &options).await.map_err(|e| {
             self.alerts.notify(
                 AlertEvent::new(AlertKind::TransferDeployFailed, e.to_string())

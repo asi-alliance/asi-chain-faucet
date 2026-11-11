@@ -33,7 +33,7 @@ uuid = { version = "1.0", features = ["v4"] }
 rand = "0.9.2"
 reqwest = { version = "0.12.23", features = ["json", "rustls-tls"], default-features = false }
 
-# F1r3fly node client library — uint256 protocol/signing pin in the submodule
+# ASI Chain client library — rust-dev commit pinned in the submodule
 node_cli = { package = "node_cli", path = "./rust-client", default-features = false }
 
 [dev-dependencies]
