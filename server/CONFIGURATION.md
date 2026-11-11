@@ -31,16 +31,16 @@ Unavailable, malformed, negative, or inexact balance responses do not enable cla
 Balance reads retain the system-vault exploratory query and the configured
 `EXPLORATORY_RETRY_BUDGET_SEC` for observer capacity refusals.
 
-The Rust-client submodule selects [upstream Rust client PR #88](https://github.com/F1R3FLY-io/rust-client/pull/88) at
-`ce2b5fcfe3012c07ea11442dcc072cd7ba6d7d2f`, with protocol dependencies pinned
-to node `0ccc315d84b32d668e8db49cd56ba3c576693e15`. It supports node #881's
-uint256 deploy prices and signing format, including #896's exact amounts and
-#947's string-valued prices. The selected validator and observer must use this
-uint256 protocol; nodes using the previous monetary wire format are unsupported.
+The backend uses [asi-alliance/asi-chain-client, branch `rust-dev`](https://github.com/asi-alliance/asi-chain-client/tree/rust-dev)
+as a Cargo git dependency pinned to `5d1c9b4d12e33ec8b64a74a28df196ef03478e73`.
+Cargo fetches it automatically; `Cargo.lock` records the exact Git source.
+Node protocol dependencies remain at `0ccc315d84b32d668e8db49cd56ba3c576693e15`.
+Phlo prices must fit positive `i64` and are encoded as uint256 protobuf values.
+The validator and observer must support the uint256 monetary wire protocol.
 The ASI system-vault transfer ABI and exact balance query remain in use.
-`minPhloPrice` and deploy-detail `phloPrice` are canonical decimal JSON strings.
-Prices must be positive and both the price and `DEPLOY_PHLO_LIMIT * minPhloPrice`
-must fit uint256; the client checks these bounds before signing.
+HTTP integer and Phlo price responses accept string and legacy numeric encodings.
+Balances and transfer amounts remain exact uint256 values. A minimum Phlo price
+outside the client i64 range fails before signing.
 Build with the committed `nightly-2026-02-09` toolchain and `Cargo.lock`.
 
 The backend server is configured through environment variables defined in a `.env` file. All configuration is loaded at startup and validated before the server starts accepting requests.

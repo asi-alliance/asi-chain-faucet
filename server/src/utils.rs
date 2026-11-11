@@ -162,7 +162,7 @@ mod tests {
     #[tokio::test]
     async fn selection_fails_when_no_node_is_ready() {
         let node = TestNode::start(StatusCode::OK, r#"{"isReady":false}"#).await;
-        let error = choose_random_node(&[node.socket.clone()])
+        let error = choose_random_node(std::slice::from_ref(&node.socket))
             .await
             .unwrap_err();
         assert_eq!(error.to_string(), "No reachable nodes");
