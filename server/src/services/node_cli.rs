@@ -167,15 +167,10 @@ impl NodeCliService {
     /// Read `/api/deploy/{id}` and return its `(systemDeployError, errored)`.
     /// A missing detail is not fatal: the finalization endpoint still answers.
     async fn fetch_deploy_error(&self, id: &str, api: &NodeHttp) -> (Option<String>, bool) {
-        match api.get_deploy_detail(id).await {
-            Ok(Some(detail)) => {
-                // In previous versions node emits `systemDeployError` as an empty string on
-                // success; only a non-blank message is a real failure.
-                let system_deploy_error = detail
-                    .system_deploy_error
-                    .filter(|err| !err.trim().is_empty());
-                (system_deploy_error, detail.errored)
-            }
+        // The client detail type omits `transfers`. A vault can reject a
+        // transfer even when the Rholang deploy itself finalized without error.
+        match api.get_deploy(id).await {
+            Ok(Some(detail)) => deploy_failure(&detail),
             Ok(None) => (None, false),
             Err(e) => {
                 warn!("FAUCET: Failed to fetch deploy detail for {}: {}", id, e);
@@ -241,6 +236,35 @@ fn build_balance_query(address: &str) -> node_cli::Result<String> {
  }}
 }}"#
     ))
+}
+
+fn deploy_failure(detail: &serde_json::Value) -> (Option<String>, bool) {
+    let errored = detail
+        .get("errored")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let system_error = detail
+        .get("systemDeployError")
+        .and_then(|v| v.as_str())
+        .filter(|text| !text.trim().is_empty())
+        .map(str::to_owned);
+    let transfer_error = detail
+        .get("transfers")
+        .and_then(|v| v.as_array())
+        .and_then(|transfers| {
+            transfers
+                .iter()
+                .find(|transfer| transfer.get("success").and_then(|v| v.as_bool()) == Some(false))
+        })
+        .map(|transfer| {
+            transfer
+                .get("failReason")
+                .and_then(|v| v.as_str())
+                .filter(|reason| !reason.trim().is_empty())
+                .unwrap_or("Vault rejected transfer")
+                .to_owned()
+        });
+    (system_error.or(transfer_error), errored)
 }
 
 impl crate::services::claims::ClaimNode for NodeCliService {
@@ -311,6 +335,23 @@ mod claim_tests {
         collections::HashMap,
         sync::atomic::{AtomicI64, Ordering},
     };
+
+    #[test]
+    fn finalized_deploy_with_rejected_transfer_is_an_error() {
+        let failed = serde_json::json!({
+            "errored": false, "isFinalized": true, "systemDeployError": "",
+            "transfers": [{"amount": "10000000000000000000000", "success": false, "failReason": "Insufficient funds"}]
+        });
+        assert_eq!(
+            deploy_failure(&failed),
+            (Some("Insufficient funds".into()), false)
+        );
+        let success = serde_json::json!({
+            "errored": false, "isFinalized": true, "systemDeployError": "",
+            "transfers": [{"amount": "10000000000000000000000", "success": true, "failReason": ""}]
+        });
+        assert_eq!(deploy_failure(&success), (None, false));
+    }
 
     #[tokio::test]
     async fn finalized_claim_rejects_lagging_observer_and_reads_later_spending() {

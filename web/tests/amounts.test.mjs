@@ -32,6 +32,17 @@ for (const decimals of [8, 18]) {
         assert.equal(isEligible((ceiling - 1n).toString(), ceiling), true);
         assert.equal(isEligible(ceiling.toString(), ceiling), false);
         assert.equal(isEligible(decimalToAtomic('30000', decimals).toString(), ceiling), false);
-        assert.equal(formatDisplayAtomic(decimalToAtomic('10000.00000001', decimals).toString(), decimals), '10,000.00000001');
+        assert.equal(formatDisplayAtomic(decimalToAtomic('10000.00000001', decimals).toString(), decimals), '≈10,000');
     });
 }
+
+test('18-decimal balances use short display without changing exact eligibility', () => {
+    const ceiling = decimalToAtomic('20000', 18);
+    assert.equal(formatDisplayAtomic('10000000000000000000000', 18), '10,000');
+    assert.equal(formatDisplayAtomic('20000000000000000000000', 18), '20,000');
+    assert.equal(formatDisplayAtomic('1', 18), '<0.0001');
+    assert.equal(formatDisplayAtomic(decimalToAtomic('1234.56789', 18).toString(), 18), '≈1,234.5678');
+    assert.equal(formatDisplayAtomic((ceiling - 1n).toString(), 18), '≈19,999.9999');
+    assert.equal(isEligible((ceiling - 1n).toString(), ceiling), true);
+    assert.equal(isEligible(ceiling.toString(), ceiling), false);
+});

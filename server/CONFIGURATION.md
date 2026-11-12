@@ -8,16 +8,14 @@ Complete configuration guide for ASI Chain Faucet backend server.
 
 ### Exact amounts and native precision
 
-`FAUCET_TOKEN_DECIMALS` is an integer in 0..18, default 8. The selected node
+`FAUCET_TOKEN_DECIMALS` is an integer in 0..18, default 18. The selected node
 must report the same precision before the faucet signs a transfer. Its own
 HTTP status supplies the minimum phlo price used for that submission.
-`FAUCET_AMOUNT` remains an unsigned atomic-unit decimal string, now bounded by
-uint256 instead of u64. For example, ten tokens plus one atomic unit on an
-18-decimal test network is `10000000000000000001`.
-
-`FAUCET_MAX_BALANCE` retains the server's existing **whole-token** interpretation.
-It accepts an exact decimal token string and scales it once using configured
-precision. Eligibility is strictly `balance < ceiling`; equality is ineligible.
+`FAUCET_AMOUNT` and `FAUCET_MAX_BALANCE` both use ASI token decimal strings:
+`10000` means 10,000 ASI, regardless of configured precision. Fractional ASI
+values are accepted only when exactly representable at that precision. Both
+values are scaled once at startup into exact uint256 atomic units. Eligibility
+is strictly `balance < ceiling`; equality is ineligible.
 The threshold applies to the balance before distribution, not the resulting
 post-transfer balance. It is not a cumulative claim or rate limit.
 The default eligibility ceiling is 20,000 whole ASI tokens. Review monetary
@@ -176,22 +174,22 @@ These variables have default values and can be omitted:
 #### FAUCET_AMOUNT
 
 ```bash
-FAUCET_AMOUNT=1000000000000
+FAUCET_AMOUNT=10000
 ```
 
-**Description:** Amount of ASI tokens in smallest token unit to send per transfer request.
+**Description:** Amount of ASI tokens to send per transfer request.
 
-**Format:** Integer (positive, non-zero)
+**Format:** Positive decimal ASI token string, exactly representable at configured precision.
 
-**Unit:** Atomic units. One ASI is `10^FAUCET_TOKEN_DECIMALS` atomic units (default 8 decimals).
+**Unit:** ASI tokens, the same unit as `FAUCET_MAX_BALANCE`. Both are converted using `FAUCET_TOKEN_DECIMALS` (default 18).
 
-**Default:** 1000000000000
+**Default:** 10000
 
 **Validation:** Must be greater than 0
 
 **Example:**
 ```bash
-FAUCET_AMOUNT=1000000000000  # Send 10,000 ASI per request
+FAUCET_AMOUNT=10000  # Send 10,000 ASI per request
 ```
 
 ---
@@ -512,7 +510,7 @@ For an isolated native18 configuration:
 
 ```bash
 FAUCET_TOKEN_DECIMALS=18
-FAUCET_AMOUNT=10000000000000000001
+FAUCET_AMOUNT=10.000000000000000001
 FAUCET_MAX_BALANCE=100
 ```
 
@@ -531,7 +529,8 @@ Create a `.env` file in the `server/` directory:
 
 ```bash
 # Faucet Configuration
-FAUCET_AMOUNT=1000000000000
+FAUCET_TOKEN_DECIMALS=18
+FAUCET_AMOUNT=10000
 FAUCET_MAX_BALANCE=20000
 PRIVATE_KEY=<your_private_key>
 
@@ -768,3 +767,24 @@ When upgrading an existing installation, set `FAUCET_MAX_BALANCE=20000` in its
 whole ASI tokens, not 20,000 tokens in atomic units. This environment variable
 continues to use whole tokens at both supported precisions. Precision must
 match the actual node runtime; do not override it only in the frontend.
+
+
+### Current ASItestnet deployment (18 decimals)
+
+```dotenv
+FAUCET_TOKEN_DECIMALS=18
+FAUCET_AMOUNT=10000
+FAUCET_MAX_BALANCE=20000
+FAUCET_NETWORK_ID=ASItestnet-native18-2026-11-11
+```
+
+This sends 10,000 ASI per claim. The 20,000 ASI eligibility threshold becomes
+`20000000000000000000000` atomic units in `/config` and server comparisons.
+`FAUCET_MAX_BALANCE` remains whole tokens; do not put its atomic value in `.env`.
+This namespace identifies the recreated 18-decimal chain. Old-chain journals
+are retained under their original namespace and are not replayed into this one.
+Use a new namespace only when recreating/switching chains, never for an ordinary
+precision setting correction on the same chain.
+The frontend reads precision from `/config`, displays whole ASI or up to four
+fractional digits, and marks truncated values with `≈` (dust with `<0.0001`).
+Display shortening never changes exact integer eligibility comparisons.

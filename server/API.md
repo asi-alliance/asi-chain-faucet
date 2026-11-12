@@ -113,7 +113,7 @@ Transfer failed (400 Bad Request):
 
 3. **Amount:**
    - Transfer amount is configured via `FAUCET_AMOUNT` environment variable
-   - Default: 1,000,000,000,000 atomic units (10,000 ASI at the default 8 decimals)
+   - Default: 10,000 ASI. `FAUCET_AMOUNT` and `FAUCET_MAX_BALANCE` both use ASI token strings; atomic conversion uses `FAUCET_TOKEN_DECIMALS`.
 
 **Processing Flow:**
 
@@ -169,7 +169,7 @@ GET /balance/11114GuXVLzHJqUqDUJGLJJsn8c1ASIhztKZtG1KN1jV48XPBUdVzKBD3R HTTP/1.1
 
 | Field | Type | Description |
 |-------|------|-------------|
-| balance | string | Exact uint256 balance in atomic units. One ASI = 10^FAUCET_TOKEN_DECIMALS atomic units (default 8 decimals). |
+| balance | string | Exact uint256 balance in atomic units. One ASI = 10^FAUCET_TOKEN_DECIMALS atomic units (default 18 decimals). |
 
 **Error Responses:**
 
