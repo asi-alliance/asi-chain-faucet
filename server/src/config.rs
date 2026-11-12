@@ -72,16 +72,14 @@ impl AppConfig {
         let node_hosts_display = Self::render_node_hosts(&node_sockets);
 
         let native_token_decimals = env::var("FAUCET_TOKEN_DECIMALS")
-            .unwrap_or_else(|_| "8".into())
+            .unwrap_or_else(|_| "18".into())
             .parse::<u32>()?;
         anyhow::ensure!(
             native_token_decimals <= 18,
             "FAUCET_TOKEN_DECIMALS must be in 0..18"
         );
-        let faucet_amount = node_cli::vault::parse_amount(
-            &env::var("FAUCET_AMOUNT").unwrap_or_else(|_| "1000000000000".into()),
-        )?;
-        let faucet_max_balance = node_cli::vault::tokens_to_dust(
+        let (faucet_amount, faucet_max_balance) = parse_faucet_amounts(
+            &env::var("FAUCET_AMOUNT").unwrap_or_else(|_| "10000".into()),
             &env::var("FAUCET_MAX_BALANCE").unwrap_or_else(|_| "20000".into()),
             native_token_decimals,
         )?;
@@ -234,6 +232,20 @@ impl AppConfig {
     }
 }
 
+// Both environment amounts use ASI tokens. Convert exactly once at startup;
+// API responses, deploys and persisted reservations continue to use atomic units.
+fn parse_faucet_amounts(
+    amount: &str,
+    ceiling: &str,
+    decimals: u32,
+) -> anyhow::Result<(num_bigint::BigUint, num_bigint::BigUint)> {
+    let amount = node_cli::vault::tokens_to_dust(amount, decimals)
+        .map_err(|error| anyhow::anyhow!("Invalid FAUCET_AMOUNT (ASI tokens): {error}"))?;
+    let ceiling = node_cli::vault::tokens_to_dust(ceiling, decimals)
+        .map_err(|error| anyhow::anyhow!("Invalid FAUCET_MAX_BALANCE (ASI tokens): {error}"))?;
+    Ok((amount, ceiling))
+}
+
 pub fn is_eligible(balance: &str, ceiling: &num_bigint::BigUint) -> anyhow::Result<bool> {
     let raw = node_cli::vault::parse_amount(balance)?;
     anyhow::ensure!(raw.to_string() == balance, "Noncanonical balance");
@@ -244,6 +256,27 @@ pub fn is_eligible(balance: &str, ceiling: &num_bigint::BigUint) -> anyhow::Resu
 mod amount_tests {
     use super::is_eligible;
     use node_cli::vault::{parse_amount, tokens_to_dust};
+
+    #[test]
+    fn environment_amounts_share_token_units_at_both_precisions() {
+        for decimals in [8, 18] {
+            let (amount, ceiling) =
+                super::parse_faucet_amounts("10000", "20000", decimals).unwrap();
+            let scale = num_bigint::BigUint::from(10u32).pow(decimals);
+            assert_eq!(amount, &scale * 10000u32);
+            assert_eq!(ceiling, &scale * 20000u32);
+        }
+        let (amount, ceiling) =
+            super::parse_faucet_amounts("10.000000000000000001", "20", 18).unwrap();
+        assert_eq!(amount.to_string(), "10000000000000000001");
+        assert_eq!(ceiling.to_string(), "20000000000000000000");
+        for invalid in ["-1", "1e4", "10000 ASI", "0.0000000000000000001"] {
+            assert!(super::parse_faucet_amounts(invalid, "20000", 18).is_err());
+            assert!(super::parse_faucet_amounts("10000", invalid, 18).is_err());
+        }
+        let overflow = (num_bigint::BigUint::from(1u32) << 256usize).to_string();
+        assert!(super::parse_faucet_amounts(&overflow, "20000", 18).is_err());
+    }
 
     #[test]
     fn eligibility_is_exact_at_both_precisions() {
