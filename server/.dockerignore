@@ -1,6 +1,4 @@
 target
-rust-client/target
-rust-client/.git
 .env
 .env.*
 .git

@@ -71,13 +71,16 @@ The ASI Chain Faucet consists of two main components working together to provide
 
 ### Running the Backend
 
+The backend uses [asi-alliance/asi-chain-client, branch `rust-dev`](https://github.com/asi-alliance/asi-chain-client/tree/rust-dev)
+as a Cargo git dependency pinned to `5d1c9b4d12e33ec8b64a74a28df196ef03478e73`.
+Cargo fetches it automatically; `Cargo.lock` records the exact Git source.
+Node protocol dependencies remain at `0ccc315d84b32d668e8db49cd56ba3c576693e15`.
+Phlo prices must fit positive `i64` and are encoded as uint256 protobuf values.
+
 ```bash
 # Clone the repository
 git clone https://github.com/asi-alliance/asi-chain-faucet.git
 cd asi-chain-faucet
-
-# Initialize and update submodules (rust-client is pinned to a commit recorded by the superproject)
-git submodule update --init --recursive
 
 cd server
 
@@ -274,13 +277,12 @@ See [server/Cargo.toml](server/Cargo.toml) and [web/package.json](web/package.js
 The **Faucet tests** workflow runs for pull requests targeting `dev` or `main`,
 pushes to either branch, and manual runs. It checks backend formatting and runs
 `cargo test --locked --all-targets` with the toolchain in
-`server/rust-toolchain.toml` and the committed client submodule. A separate job
+`server/rust-toolchain.toml` and the committed Cargo git dependency. A separate job
 uses Node.js 24 to run the frontend amount tests, TypeScript/Vite build and lint.
 Test logs are retained as workflow artifacts for seven days, including failed
 test runs. Superseded runs for the same PR are cancelled.
 
-To run the same checks locally after installing the prerequisites and initializing
-the submodule:
+To run the same checks locally after installing the prerequisites:
 
 ```bash
 (cd server && cargo fmt --all -- --check && cargo test --locked --all-targets)

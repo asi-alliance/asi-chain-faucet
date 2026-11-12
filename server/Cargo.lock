@@ -2197,6 +2197,7 @@ dependencies = [
 [[package]]
 name = "node_cli"
 version = "0.2.7"
+source = "git+https://github.com/asi-alliance/asi-chain-client.git?rev=5d1c9b4d12e33ec8b64a74a28df196ef03478e73#5d1c9b4d12e33ec8b64a74a28df196ef03478e73"
 dependencies = [
  "blake2",
  "bs58",
