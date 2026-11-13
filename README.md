@@ -78,6 +78,12 @@ must fit positive `i64` and are encoded as uint256 protobuf values.
 For existing clones, run `git submodule sync -- server/rust-client` before
 updating submodules.
 
+This pin supplies the exact-integer API decoding and phlo-price signing used
+by the target node. Use `git submodule update --init --recursive` to reproduce
+it; `--remote` follows a moving branch and is not part of the build procedure.
+Integration into the client's `dev` branch and a subsequent repin require a
+separate client change and compatibility check.
+
 ```bash
 # Clone the repository
 git clone https://github.com/asi-alliance/asi-chain-faucet.git
@@ -136,6 +142,20 @@ npm run dev
 ```
 
 Frontend available at `http://localhost:5173`.
+
+### Running the Frontend in Docker
+
+The image builds with `VITE_BASE_URL=/api`, which takes precedence over a value
+in `web/.env`. Nginx forwards `/api/` to `http://host.docker.internal:40470/`.
+Run the backend with `SERVER_HOST=0.0.0.0` and `SERVER_PORT=40470` for this
+configuration. The web Compose service sets
+`extra_hosts: ["host.docker.internal:host-gateway"]` so the container can reach
+the host on Linux.
+
+From the `web/` directory, run `docker compose up --build -d`; the frontend is
+then available at `http://localhost:3000`. `nginx.conf.template` is copied as a
+static config, without environment substitution. Changing the proxy's backend
+host or port requires editing that file and rebuilding the image.
 
 ---
 

@@ -496,7 +496,7 @@ When enabled, the service posts these events to a Mattermost channel:
 |-------|-------------|
 | `No reachable nodes` | A transfer request is handled and none of the configured validator nodes reports readiness |
 | `Transfer deploy failed` | The transfer deploy to a validator node returns an error |
-| `Deploy failed` | Deploy polling reports execution failure, expiry, or a rejected vault transfer |
+| `Deploy failed` | Deploy polling reports execution failure, expiry, or a rejected vault transfer; finalized-claim reconciliation also reports execution or vault-transfer errors from available deploy detail |
 
 Other failures stay in the logs, including balance query failures, deploy status failures, startup and configuration errors, and user validation errors.
 
@@ -766,8 +766,12 @@ missing status, observer failures and malformed journals never release a claim.
 For `Finalized`, reconciliation uses the observer HTTP balance API to verify
 the inclusion block and then read the current finalized balance at a height
 at least as high as inclusion. This permits later claims after spending while
-preventing stale pre-distribution balances from reopening eligibility. The
-observer must support both HTTP endpoints:
+preventing stale pre-distribution balances from reopening eligibility.
+Reconciliation also checks available deploy detail and raises the existing
+`DeployFailed` alert for an execution or vault-transfer error. A rejected
+transfer remains canonically `Finalized`, so the inclusion-block balance guard
+still applies. This check runs on a claim retry and needs no background worker.
+The observer must support both HTTP endpoints:
 
 - `/api/balance/{address}` for finalized balance reconciliation.
 - `/api/deploy-finalization-status/{id}` for deploy finalization status.
