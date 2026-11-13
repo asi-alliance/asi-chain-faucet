@@ -31,6 +31,10 @@ rustc --version
 cargo --version
 ```
 
+The backend uses `nightly-2026-02-09`, selected automatically by
+`server/rust-toolchain.toml`. Install it with
+`rustup toolchain install nightly-2026-02-09` if needed.
+
 **System Dependencies:**
 ```bash
 # Ubuntu/Debian
@@ -68,13 +72,10 @@ git submodule init
 git submodule update
 ```
 
-The `rust-client` submodule pins [upstream Rust client PR #88](https://github.com/F1R3FLY-io/rust-client/pull/88)
-at `ce2b5fcfe3012c07ea11442dcc072cd7ba6d7d2f` for the node #881 uint256
-protocol, including #896/#947 exact JSON values. Earlier monetary wire formats
-are unsupported. For an existing checkout, run `git submodule sync --recursive`
-before updating because the client URL changed from the ASI fork to upstream.
-`git submodule update` checks out the recorded commit. To update it, check out
-the desired commit inside `server/rust-client` and stage the superproject change:
+The `rust-client` submodule pins [asi-alliance/asi-chain-client, branch `rust-dev`](https://github.com/asi-alliance/asi-chain-client/tree/rust-dev)
+at `5d1c9b4d12e33ec8b64a74a28df196ef03478e73`. For an existing checkout,
+run `git submodule sync --recursive` before updating. `git submodule update`
+checks out the recorded commit rather than the moving branch tip.
 
 2. **Create configuration file:**
 
@@ -104,8 +105,9 @@ Create a `.env` file with development-specific settings:
 
 ```bash
 # Development Configuration
-FAUCET_AMOUNT=10000000000000
-FAUCET_MAX_BALANCE=5000000000000
+FAUCET_TOKEN_DECIMALS=18  # Must match the development chain
+FAUCET_AMOUNT=10000      # ASI tokens
+FAUCET_MAX_BALANCE=20000 # ASI tokens
 PRIVATE_KEY=<dev_private_key>
 
 # Local or testnet nodes
@@ -189,10 +191,7 @@ curl -X POST http://localhost:40470/transfer \
 src/
 ├── main.rs              # Entry point, logging setup
 ├── config.rs            # Configuration loading and validation
-├── utils.rs             # Node selection, validation
-├── crypto.rs            # Key handling, vault address generation
-├── vault.rs             # Vault transfer Rholang templates
-├── http_client.rs       # Direct HTTP client for node API
+├── utils.rs             # Token conversion alias, node selection, validation
 │
 ├── core/                # Application core
 │   ├── mod.rs
@@ -213,8 +212,15 @@ src/
 │
 └── services/            # Business logic
     ├── mod.rs
+    ├── alerts.rs        # Mattermost notifications
+    ├── claims.rs        # Durable per-recipient reservations
     └── node_cli.rs      # Blockchain interaction service
 ```
+
+The faucet's `utils::tokens_to_units` is a local alias for
+`node_cli::vault::tokens_to_dust`. The Rust-client API keeps its original name.
+Reservations are persisted before submission and reconciled on a later claim;
+the backend does not poll them in the background.
 
 ### Adding New Endpoints
 

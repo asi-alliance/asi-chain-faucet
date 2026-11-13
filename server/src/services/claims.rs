@@ -290,7 +290,7 @@ mod tests {
         let directory = Directory::new();
         let node = FakeNode::new();
         node.unknown.store(true, Ordering::SeqCst);
-        let wide = node_cli::vault::tokens_to_dust("10.000000000000000001", 18).unwrap();
+        let wide = crate::utils::tokens_to_units("10.000000000000000001", 18).unwrap();
         assert_eq!(
             directory
                 .store("network")

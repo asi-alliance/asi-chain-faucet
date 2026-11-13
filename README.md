@@ -47,12 +47,12 @@ The ASI Chain Faucet consists of two main components working together to provide
 ## Key Features
 
 - **Token Distribution** - Send a configured amount of test ASI tokens to valid testnet addresses
-- **Balance Validation** - Automatically checks recipient balance before transfer to prevent exceeding the faucet limit
+- **Balance Validation** - Requires the recipient's pre-claim balance to be strictly below the eligibility ceiling
 - **Transaction Tracking** - Monitor the status of token transfers using deploy IDs
 - **Address Validation** - Validates ASI address format before processing requests
-- **Multi-Node Support** - Load balances requests across multiple validator nodes for reliability
+- **Multi-Node Support** - Selects a reachable validator for submission; balance and finalization queries use the observer
 - **CORS Enabled** - Full CORS support for cross-origin requests from the web interface
-- **Critical Error Alerts** - Optional Mattermost notifications when no validator node is reachable or a transfer deploy fails, with per-event-type throttling
+- **Critical Error Alerts** - Optional Mattermost notifications for unreachable validators, submission errors and deploy failures, with per-event-type throttling
 
 ---
 
@@ -61,7 +61,7 @@ The ASI Chain Faucet consists of two main components working together to provide
 ### Prerequisites
 
 **Backend:**
-- Rust 1.77 or higher
+- Rustup with the pinned `nightly-2026-02-09` toolchain (`server/rust-toolchain.toml`)
 - Protocol Buffers Compiler
 - Make and Perl
 
@@ -98,6 +98,24 @@ cargo run --release
 
 Server starts on `http://0.0.0.0:40470` by default (from .env.example).
 
+### Upgrading an existing backend
+
+Before restarting, explicitly set `FAUCET_AMOUNT=10000` and
+`FAUCET_MAX_BALANCE=20000` in the existing deployment configuration. Both now
+use ASI tokens. The old atomic `FAUCET_AMOUNT=1000000000000` would request
+one trillion ASI; the old example ceiling `2000000000000` also means whole
+ASI. The default `FAUCET_TOKEN_DECIMALS` has changed from 8 to 18: explicitly
+set it to the actual chain precision, even if the deployment previously set
+only `FAUCET_AMOUNT`. Review all three settings together. Startup logs show
+the effective amount and ceiling in ASI and atomic units.
+
+The observer must serve `/api/balance/{address}` and
+`/api/deploy-finalization-status/{id}`. Missing finalization support is reported
+as an error when querying deploy status. Preserve `FAUCET_CLAIMS_DIR` and
+`FAUCET_NETWORK_ID` across upgrades. Follow the
+[reservation recovery procedure](server/CONFIGURATION.md#inspecting-and-recovering-a-stuck-reservation)
+before changing any journal files.
+
 ### Running the Frontend
 
 ```bash
@@ -130,9 +148,6 @@ asi-chain-faucet/
 │   │   ├── api/               # API layer (handlers, models, router)
 │   │   ├── core/              # Application core
 │   │   ├── services/          # Business logic (blockchain interaction)
-│   │   ├── crypto.rs          # Cryptographic operations (keys, vault addresses)
-│   │   ├── vault.rs           # Vault transfer Rholang templates
-│   │   ├── http_client.rs     # Direct HTTP client for node API
 │   │   ├── config.rs          # Configuration management
 │   │   └── main.rs            # Application entry point
 │   ├── Cargo.toml             # Rust dependencies
@@ -219,7 +234,7 @@ asi-chain-faucet/
 ### Technology Stack
 
 **Backend:**
-- Rust 1.77 - Systems programming language
+- Rust (`nightly-2026-02-09`) - Pinned backend toolchain
 - Axum 0.8 - Modern async web framework
 - Tokio 1.0 - Asynchronous runtime
 - Tower-HTTP 0.5 - HTTP middleware
@@ -247,7 +262,7 @@ See [server/Cargo.toml](server/Cargo.toml) and [web/package.json](web/package.js
 **[server/README.md](server/README.md)** - Backend overview, quick start, architecture, and navigation
 
 **[server/API.md](server/API.md)** - Complete API reference
-- All endpoints (POST /transfer, GET /balance, GET /deploy)
+- All endpoints (GET /config, POST /transfer, GET /balance, GET /deploy)
 - Request/response formats
 - Error codes and handling
 - CORS configuration
