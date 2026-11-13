@@ -312,12 +312,21 @@ impl crate::services::claims::ClaimNode for NodeCliService {
         use crate::services::claims::ClaimStatus;
         let status = self.finalization_status(id).await?;
         Ok(match status.state.as_str() {
-            "Finalized" => ClaimStatus::Finalized(
-                status
+            "Finalized" => {
+                let block = status
                     .latest_block_hash
+                    .as_ref()
                     .filter(|hash| !hash.is_empty())
-                    .context("Missing finalized block hash")?,
-            ),
+                    .context("Missing finalized block hash")?;
+                let (system_deploy_error, errored) =
+                    self.fetch_deploy_error(id, &self.observer()?).await;
+                if errored || system_deploy_error.is_some() {
+                    self.alert_deploy_error(id, &status.state, &system_deploy_error);
+                }
+                // A vault rejection does not change canonical finality. Keep the
+                // inclusion block so reconciliation still verifies the balance.
+                ClaimStatus::Finalized(block.clone())
+            }
             "Failed" => ClaimStatus::Failed,
             "Expired" => ClaimStatus::Expired,
             _ => ClaimStatus::Pending,
@@ -331,7 +340,7 @@ mod claim_tests {
     use crate::services::claims::{ClaimNode, ClaimStatus};
     use axum::{
         extract::{Path, Query},
-        routing::get,
+        routing::{get, post},
         Json, Router,
     };
     use std::{
@@ -354,6 +363,71 @@ mod claim_tests {
             "transfers": [{"amount": "10000000000000000000000", "success": true, "failReason": ""}]
         });
         assert_eq!(deploy_failure(&success), (None, false));
+    }
+
+    #[tokio::test]
+    async fn reconciliation_alerts_on_vault_rejection_without_deploy_polling() {
+        let (sender, mut received) = tokio::sync::mpsc::unbounded_channel();
+        let app = Router::new()
+            .route("/api/deploy-finalization-status/{id}", get(|| async {
+                Json(serde_json::json!({"state": "Finalized", "rejection_count": 0, "latest_block_hash": "abcd"}))
+            }))
+            .route("/api/deploy/{id}", get(|| async {
+                Json(serde_json::json!({
+                    "errored": false, "systemDeployError": "",
+                    "transfers": [{"success": false, "failReason": "Insufficient funds"}]
+                }))
+            }))
+            .route("/alerts", post(move |Json(payload): Json<serde_json::Value>| {
+                let sender = sender.clone();
+                async move {
+                    sender.send(payload).unwrap();
+                    axum::http::StatusCode::OK
+                }
+            }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let mut config = AppConfig::from_env().unwrap();
+        config.observer_host = "127.0.0.1".into();
+        config.observer_http_port = port;
+        config.alerts_enabled = true;
+        config.mattermost_webhook_url = Some(crate::config::Secret::new(format!(
+            "http://127.0.0.1:{port}/alerts"
+        )));
+        let node = NodeCliService::new(config.clone(), AlertService::new(&config));
+        let id = "a".repeat(128);
+        assert!(
+            matches!(ClaimNode::status(&node, &id).await.unwrap(), ClaimStatus::Finalized(block) if block == "abcd")
+        );
+        let payload = tokio::time::timeout(Duration::from_secs(5), received.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let text = payload["text"].as_str().unwrap();
+        assert!(text.contains("Deploy failed"));
+        assert!(text.contains("Insufficient funds"));
+        assert!(text.contains(&id));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn missing_deploy_detail_does_not_override_finalized_status() {
+        let app = Router::new().route("/api/deploy-finalization-status/{id}", get(|| async {
+            Json(serde_json::json!({"state": "Finalized", "rejection_count": 0, "latest_block_hash": "abcd"}))
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let mut config = AppConfig::from_env().unwrap();
+        config.observer_host = "127.0.0.1".into();
+        config.observer_http_port = port;
+        config.alerts_enabled = false;
+        let node = NodeCliService::new(config.clone(), AlertService::new(&config));
+        assert!(
+            matches!(ClaimNode::status(&node, &"a".repeat(128)).await.unwrap(), ClaimStatus::Finalized(block) if block == "abcd")
+        );
+        server.abort();
     }
 
     #[tokio::test]
