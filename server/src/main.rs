@@ -19,6 +19,14 @@ async fn main() -> Result<()> {
 
     let config = AppConfig::from_env()?;
     info!("Configuration loaded");
+    info!(
+        token_decimals = config.native_token_decimals,
+        faucet_amount_asi = %node_cli::vault::dust_to_tokens(&config.faucet_amount, config.native_token_decimals)?,
+        faucet_amount_atomic = %config.faucet_amount,
+        faucet_max_balance_asi = %node_cli::vault::dust_to_tokens(&config.faucet_max_balance, config.native_token_decimals)?,
+        faucet_max_balance_atomic = %config.faucet_max_balance,
+        "Effective faucet amount and eligibility ceiling"
+    );
 
     debug!("Server config = {:?}", config);
 

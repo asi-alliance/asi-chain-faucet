@@ -1,4 +1,4 @@
-use crate::utils::NodeSocket;
+use crate::utils::{tokens_to_units, NodeSocket};
 use std::env;
 use std::error::Error;
 use std::fmt;
@@ -200,30 +200,20 @@ impl AppConfig {
             .unwrap_or(default)
     }
 
-    pub fn validate(&self) -> Result<(), Box<dyn Error>> {
-        if self.private_key.is_none() {
-            return Err("PRIVATE_KEY environment variable is required".into());
-        }
-
-        if self.faucet_amount == num_bigint::BigUint::default() {
-            return Err("FAUCET_AMOUNT must be greater than 0".into());
-        }
-
-        if self.faucet_max_balance == num_bigint::BigUint::default() {
-            return Err("FAUCET_MAX_BALANCE must be greater than 0".into());
-        }
-
-        if self.deploy_check_interval_sec == 0 || self.deploy_phlo_limit <= 0 {
-            return Err("Deploy check interval and phlo limit must be positive".into());
-        }
-
-        if self.alerts_enabled && self.mattermost_webhook_url.is_none() {
-            return Err(
-                "MATTERMOST_WEBHOOK_URL environment variable is required when ALERTS_ENABLED=true"
-                    .into(),
-            );
-        }
-
+    pub fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.private_key.is_some(),
+            "PRIVATE_KEY environment variable is required"
+        );
+        validate_faucet_amounts(&self.faucet_amount, &self.faucet_max_balance)?;
+        anyhow::ensure!(
+            self.deploy_check_interval_sec > 0 && self.deploy_phlo_limit > 0,
+            "Deploy check interval and phlo limit must be positive"
+        );
+        anyhow::ensure!(
+            !self.alerts_enabled || self.mattermost_webhook_url.is_some(),
+            "MATTERMOST_WEBHOOK_URL environment variable is required when ALERTS_ENABLED=true"
+        );
         Ok(())
     }
 
@@ -239,11 +229,27 @@ fn parse_faucet_amounts(
     ceiling: &str,
     decimals: u32,
 ) -> anyhow::Result<(num_bigint::BigUint, num_bigint::BigUint)> {
-    let amount = node_cli::vault::tokens_to_dust(amount, decimals)
+    let amount = tokens_to_units(amount, decimals)
         .map_err(|error| anyhow::anyhow!("Invalid FAUCET_AMOUNT (ASI tokens): {error}"))?;
-    let ceiling = node_cli::vault::tokens_to_dust(ceiling, decimals)
+    let ceiling = tokens_to_units(ceiling, decimals)
         .map_err(|error| anyhow::anyhow!("Invalid FAUCET_MAX_BALANCE (ASI tokens): {error}"))?;
+    validate_faucet_amounts(&amount, &ceiling)?;
     Ok((amount, ceiling))
+}
+
+fn validate_faucet_amounts(
+    amount: &num_bigint::BigUint,
+    ceiling: &num_bigint::BigUint,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        *amount != num_bigint::BigUint::default(),
+        "FAUCET_AMOUNT must be greater than 0"
+    );
+    anyhow::ensure!(
+        *ceiling != num_bigint::BigUint::default(),
+        "FAUCET_MAX_BALANCE must be greater than 0"
+    );
+    Ok(())
 }
 
 pub fn is_eligible(balance: &str, ceiling: &num_bigint::BigUint) -> anyhow::Result<bool> {
@@ -254,8 +260,17 @@ pub fn is_eligible(balance: &str, ceiling: &num_bigint::BigUint) -> anyhow::Resu
 
 #[cfg(test)]
 mod amount_tests {
-    use super::is_eligible;
-    use node_cli::vault::{parse_amount, tokens_to_dust};
+    use super::{is_eligible, tokens_to_units};
+    use node_cli::vault::parse_amount;
+
+    #[test]
+    fn distribution_amount_is_independent_of_eligibility_ceiling() {
+        for decimals in [8, 18] {
+            assert!(super::parse_faucet_amounts("200000.00000001", "20000", decimals).is_ok());
+            assert!(super::parse_faucet_amounts("0", "20000", decimals).is_err());
+            assert!(super::parse_faucet_amounts("10000", "0", decimals).is_err());
+        }
+    }
 
     #[test]
     fn environment_amounts_share_token_units_at_both_precisions() {
@@ -281,7 +296,7 @@ mod amount_tests {
     #[test]
     fn eligibility_is_exact_at_both_precisions() {
         for decimals in [8, 18] {
-            let ceiling = tokens_to_dust("10", decimals).unwrap();
+            let ceiling = tokens_to_units("10", decimals).unwrap();
             assert!(is_eligible(&(&ceiling - 1u32).to_string(), &ceiling).unwrap());
             assert!(!is_eligible(&ceiling.to_string(), &ceiling).unwrap());
             assert!(!is_eligible(&(&ceiling + 1u32).to_string(), &ceiling).unwrap());
@@ -291,11 +306,11 @@ mod amount_tests {
     #[test]
     fn twenty_thousand_token_threshold_rejects_thirty_thousand() {
         for decimals in [8, 18] {
-            let ceiling = tokens_to_dust("20000", decimals).unwrap();
+            let ceiling = tokens_to_units("20000", decimals).unwrap();
             assert!(is_eligible(&(&ceiling - 1u32).to_string(), &ceiling).unwrap());
             for tokens in ["20000", "30000"] {
                 assert!(!is_eligible(
-                    &tokens_to_dust(tokens, decimals).unwrap().to_string(),
+                    &tokens_to_units(tokens, decimals).unwrap().to_string(),
                     &ceiling
                 )
                 .unwrap());
@@ -305,7 +320,7 @@ mod amount_tests {
 
     #[test]
     fn wide_amounts_and_invalid_balances() {
-        let wide = tokens_to_dust("10.000000000000000001", 18).unwrap();
+        let wide = tokens_to_units("10.000000000000000001", 18).unwrap();
         assert_eq!(wide.to_string(), "10000000000000000001");
         assert!(is_eligible("9007199254740993", &wide).unwrap());
         let maximum = (num_bigint::BigUint::from(1u32) << 256usize) - 1u32;

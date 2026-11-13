@@ -40,6 +40,14 @@ impl NodeCliService {
         Self { config, alerts }
     }
 
+    async fn finalization_status(&self, id: &str) -> Result<DeployFinalizationStatus> {
+        self.observer()?.deploy_finalization_status(id).await?
+            .with_context(|| format!(
+                "Observer {}:{} does not serve /api/deploy-finalization-status/{{id}} (HTTP 404); configure an observer that supports this endpoint",
+                self.config.observer_host, self.config.observer_http_port
+            ))
+    }
+
     async fn prepare_transfer(&self, to_address: &str) -> Result<Vec<u8>> {
         let private_key_hex = self
             .config
@@ -124,11 +132,7 @@ impl NodeCliService {
         let mut latest = None;
         for attempt in 0..max_attempts {
             let api = self.observer()?;
-            let lib_status = api
-                .deploy_finalization_status(&id)
-                .await
-                .map_err(|e| anyhow::Error::msg(e.to_string()))?
-                .context("deploy-finalization-status endpoint not available")?;
+            let lib_status = self.finalization_status(&id).await?;
 
             let (system_deploy_error, errored) = self.fetch_deploy_error(&id, &api).await;
 
@@ -296,22 +300,17 @@ impl crate::services::claims::ClaimNode for NodeCliService {
         let prepared: PreparedTransfer = serde_json::from_slice(signed)?;
         let deploy = node_cli::SignedDeploy::from_bytes(&prepared.signed)?;
         let api = F1r3flyApi::new(Endpoint::parse(&prepared.endpoint)?)?;
-        api.submit(&deploy).await.map_err(|error| {
+        api.submit(&deploy).await.inspect_err(|error| {
             self.alerts.notify(
                 AlertEvent::new(AlertKind::TransferDeployFailed, error.to_string())
                     .with_context("deploy_id", deploy.id()),
             );
-            error
         })?;
         Ok(())
     }
     async fn status(&self, id: &str) -> Result<crate::services::claims::ClaimStatus> {
         use crate::services::claims::ClaimStatus;
-        let Some(status) = self.observer()?.deploy_finalization_status(id).await? else {
-            // The journal may have committed immediately before a crash, without
-            // any submission. Resending those exact bytes is safe even if unknown.
-            return Ok(ClaimStatus::Pending);
-        };
+        let status = self.finalization_status(id).await?;
         Ok(match status.state.as_str() {
             "Finalized" => ClaimStatus::Finalized(
                 status
@@ -330,7 +329,11 @@ impl crate::services::claims::ClaimNode for NodeCliService {
 mod claim_tests {
     use super::*;
     use crate::services::claims::{ClaimNode, ClaimStatus};
-    use axum::{extract::Query, routing::get, Json, Router};
+    use axum::{
+        extract::{Path, Query},
+        routing::get,
+        Json, Router,
+    };
     use std::{
         collections::HashMap,
         sync::atomic::{AtomicI64, Ordering},
@@ -393,7 +396,7 @@ mod claim_tests {
     }
 
     #[tokio::test]
-    async fn unknown_deploy_status_keeps_same_deploy_recoverable() {
+    async fn unsupported_observer_is_an_error_instead_of_pending() {
         let app = Router::new().route(
             "/api/deploy-finalization-status/{id}",
             get(|| async { axum::http::StatusCode::NOT_FOUND }),
@@ -405,10 +408,61 @@ mod claim_tests {
         config.observer_host = "127.0.0.1".into();
         config.observer_http_port = port;
         let node = NodeCliService::new(config.clone(), AlertService::new(&config));
+        let error = ClaimNode::status(&node, "abcd").await.err().unwrap();
+        assert!(error.to_string().contains("HTTP 404"));
+        assert!(error
+            .to_string()
+            .contains("/api/deploy-finalization-status/{id}"));
+        assert!(node.get_deploy_info("abcd".into()).await.is_err());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn unknown_deploy_with_http_200_pending_remains_recoverable() {
+        let app = Router::new().route(
+            "/api/deploy-finalization-status/{id}",
+            get(|Path(id): Path<String>| async move {
+                assert_eq!(id.len(), 64);
+                assert!(id.bytes().all(|c| c.is_ascii_hexdigit()));
+                Json(serde_json::json!({"state": "Pending", "rejection_count": 0, "latest_block_hash": null}))
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let mut config = AppConfig::from_env().unwrap();
+        config.observer_host = "127.0.0.1".into();
+        config.observer_http_port = port;
+        let node = NodeCliService::new(config.clone(), AlertService::new(&config));
         assert!(matches!(
-            ClaimNode::status(&node, "abcd").await.unwrap(),
+            ClaimNode::status(&node, &"a".repeat(64)).await.unwrap(),
             ClaimStatus::Pending
         ));
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn deploy_status_rejects_errors_and_malformed_responses() {
+        for (code, body) in [
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "observer unavailable",
+            ),
+            (axum::http::StatusCode::OK, "not JSON"),
+        ] {
+            let app = Router::new().route(
+                "/api/deploy-finalization-status/{id}",
+                get(move || async move { (code, body) }),
+            );
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+            let mut config = AppConfig::from_env().unwrap();
+            config.observer_host = "127.0.0.1".into();
+            config.observer_http_port = port;
+            let node = NodeCliService::new(config.clone(), AlertService::new(&config));
+            assert!(ClaimNode::status(&node, &"a".repeat(64)).await.is_err());
+            server.abort();
+        }
     }
 }
