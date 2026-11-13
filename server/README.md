@@ -19,28 +19,22 @@ For complete project documentation, see the [main README](../README.md) in the r
 
 ### Prerequisites
 
-- Rustup with the pinned `nightly-2026-02-09` toolchain from `rust-toolchain.toml`
+- Rust nightly selected by [rust-toolchain.toml](rust-toolchain.toml)
 - Protocol Buffers Compiler: `apt install protobuf-compiler`
 
 ### Setup
 
-1. **Initialize submodules:**
+1. **Fetch dependencies:**
 
    ```bash
-   git submodule init
-   git submodule update
+   cargo fetch --locked
    ```
 
-   The `rust-client` submodule pins [asi-alliance/asi-chain-client, branch `rust-dev`](https://github.com/asi-alliance/asi-chain-client/tree/rust-dev)
-   at `5d1c9b4d12e33ec8b64a74a28df196ef03478e73`. Phlo prices must fit
-   positive `i64` and are encoded as uint256 protobuf values. For an existing
-   checkout, run `git submodule sync --recursive` before updating.
-   `git submodule update` checks out the recorded commit. To update it, check out
-   the desired commit inside `server/rust-client` and stage the change:
-   ```bash
-   git -C server/rust-client checkout <commit>
-   git add server/rust-client
-   ```
+   The backend uses [asi-alliance/asi-chain-client, branch `rust-dev`](https://github.com/asi-alliance/asi-chain-client/tree/rust-dev)
+   as a Cargo git dependency pinned to `5d1c9b4d12e33ec8b64a74a28df196ef03478e73`.
+   Cargo fetches it automatically; `Cargo.lock` records the exact Git source.
+   Node protocol dependencies remain at `0ccc315d84b32d668e8db49cd56ba3c576693e15`.
+   Phlo prices must fit positive `i64` and are encoded as uint256 protobuf values.
 
 2. **Configure environment:**
 

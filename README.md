@@ -61,36 +61,30 @@ The ASI Chain Faucet consists of two main components working together to provide
 ### Prerequisites
 
 **Backend:**
-- Rustup with the pinned `nightly-2026-02-09` toolchain (`server/rust-toolchain.toml`)
+- Rust nightly selected by [server/rust-toolchain.toml](server/rust-toolchain.toml)
 - Protocol Buffers Compiler
 - Make and Perl
 
 **Frontend:**
-- Node.js 18.x or higher
+- Node.js 24.x
 - npm 9.x or higher
 
 ### Running the Backend
 
-The client submodule uses [asi-alliance/asi-chain-client, branch `rust-dev`](https://github.com/asi-alliance/asi-chain-client/tree/rust-dev),
-pinned to `5d1c9b4d12e33ec8b64a74a28df196ef03478e73` (2026-11-11). Builds use
-that exact gitlink; `branch = rust-dev` records the source branch. Phlo prices
-must fit positive `i64` and are encoded as uint256 protobuf values.
-For existing clones, run `git submodule sync -- server/rust-client` before
-updating submodules.
+The backend uses [asi-alliance/asi-chain-client, branch `rust-dev`](https://github.com/asi-alliance/asi-chain-client/tree/rust-dev)
+as a Cargo git dependency pinned to `5d1c9b4d12e33ec8b64a74a28df196ef03478e73`.
+Cargo fetches it automatically; `Cargo.lock` records the exact Git source.
+Node protocol dependencies remain at `0ccc315d84b32d668e8db49cd56ba3c576693e15`.
+Phlo prices must fit positive `i64` and are encoded as uint256 protobuf values.
 
-This pin supplies the exact-integer API decoding and phlo-price signing used
-by the target node. Use `git submodule update --init --recursive` to reproduce
-it; `--remote` follows a moving branch and is not part of the build procedure.
-Integration into the client's `dev` branch and a subsequent repin require a
-separate client change and compatibility check.
+This revision supplies the exact-integer API decoding and phlo-price signing
+required by the target node. Integration into the client's `dev` branch and a
+subsequent revision update require a separate compatibility check.
 
 ```bash
 # Clone the repository
 git clone https://github.com/asi-alliance/asi-chain-faucet.git
 cd asi-chain-faucet
-
-# Initialize and update submodules (rust-client is pinned to a commit recorded by the superproject)
-git submodule update --init --recursive
 
 cd server
 
@@ -128,7 +122,7 @@ before changing any journal files.
 cd ../web
 
 # Install dependencies
-npm install
+npm ci
 
 # Configure environment
 # Create .env file with:
@@ -254,18 +248,18 @@ asi-chain-faucet/
 ### Technology Stack
 
 **Backend:**
-- Rust (`nightly-2026-02-09`) - Pinned backend toolchain
+- Rust - Repository-pinned nightly toolchain
 - Axum 0.8 - Modern async web framework
 - Tokio 1.0 - Asynchronous runtime
-- Tower-HTTP 0.5 - HTTP middleware
+- Tower-HTTP 0.7 - HTTP middleware
 - secp256k1 + blake2 - Cryptographic signing
 - f1r3fly-models - Protobuf types for deploy signing
 
 **Frontend:**
-- React 19.1 - UI framework
-- TypeScript 5.7 - Type-safe JavaScript
-- Vite 6.2 - Fast build tool
-- Redux Toolkit 2.6 - State management
+- React 19.3 - UI framework
+- TypeScript 5.9 - Type-safe JavaScript
+- Vite 6.4 - Fast build tool
+- Redux Toolkit 2.14 - State management
 
 **Infrastructure:**
 - Docker - Containerization
@@ -310,6 +304,33 @@ See [server/Cargo.toml](server/Cargo.toml) and [web/package.json](web/package.js
 ---
 
 ## Contributing
+
+### Tests and continuous integration
+
+The **Faucet tests** workflow runs for pull requests targeting `dev` or `main`,
+pushes to either branch, and manual runs. It checks backend formatting and runs
+`cargo test --locked --all-targets` with the toolchain in
+`server/rust-toolchain.toml` and the committed Cargo git dependency. A separate job
+uses Node.js 24 to run the frontend amount tests, TypeScript/Vite build and lint.
+Test logs are retained as workflow artifacts for seven days, including failed
+test runs. Superseded runs for the same PR are cancelled.
+
+To run the same checks locally after installing the prerequisites:
+
+```bash
+(cd server && cargo fmt --all -- --check && cargo test --locked --all-targets)
+(cd web && npm ci --no-audit --no-fund && npm run test:amounts && npm run build && npm run lint)
+```
+
+The frontend dependency lockfile is committed and used by CI and Docker builds.
+These tests use local fixtures and HTTP stubs; they
+need no validator keys, live nodes, or deployment credentials.
+
+The frontend keeps TypeScript 5.9 within the supported `typescript-eslint` range
+and Vite 6.4 on its supported security-fix line. A scoped `minimatch` override for
+`@typescript-eslint/typescript-estree` selects the patched 11.0.1+ release for
+[GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249).
+Reassess this override when the upstream dependency range accepts a patched release.
 
 Known issues and bugs are tracked in the [Issues](https://github.com/asi-alliance/asi-chain-faucet/issues) section.  
 If you encounter a problem that is not listed, please feel free to open a new issue and provide as much detail as possible.

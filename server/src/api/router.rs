@@ -48,7 +48,10 @@ pub fn create_router(state: AppState) -> Router {
             "/deploy/{deploy_id}",
             get(deploy_info_handler)
                 .options(preflight)
-                .layer(TimeoutLayer::new(Duration::from_secs(7))),
+                .layer(TimeoutLayer::with_status_code(
+                    StatusCode::REQUEST_TIMEOUT,
+                    Duration::from_secs(7),
+                )),
         )
         .route(
             "/balance/{address}",
