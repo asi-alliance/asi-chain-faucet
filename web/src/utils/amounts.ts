@@ -38,3 +38,14 @@ export function formatAtomic(value: unknown, decimals: number): string {
 export function isEligible(value: unknown, ceiling: bigint): boolean {
     return parseAtomic(value) < ceiling;
 }
+
+// Display at most four fractional digits; eligibility always uses the exact amount.
+export function formatDisplayAtomic(value: unknown, decimals: number): string {
+    const [whole, fraction = ""] = formatAtomic(value, decimals).split(".");
+    const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    const visible = fraction.slice(0, 4).replace(/0+$/, "");
+    const shortened = fraction.length > 4;
+    if (shortened && whole === "0" && !visible) return "<0.0001";
+    const display = visible ? `${grouped}.${visible}` : grouped;
+    return shortened ? `≈${display}` : display;
+}

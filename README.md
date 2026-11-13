@@ -47,12 +47,12 @@ The ASI Chain Faucet consists of two main components working together to provide
 ## Key Features
 
 - **Token Distribution** - Send a configured amount of test ASI tokens to valid testnet addresses
-- **Balance Validation** - Automatically checks recipient balance before transfer to prevent exceeding the faucet limit
+- **Balance Validation** - Requires the recipient's pre-claim balance to be strictly below the eligibility ceiling
 - **Transaction Tracking** - Monitor the status of token transfers using deploy IDs
 - **Address Validation** - Validates ASI address format before processing requests
-- **Multi-Node Support** - Load balances requests across multiple validator nodes for reliability
+- **Multi-Node Support** - Selects a reachable validator for submission; balance and finalization queries use the observer
 - **CORS Enabled** - Full CORS support for cross-origin requests from the web interface
-- **Critical Error Alerts** - Optional Mattermost notifications when no validator node is reachable or a transfer deploy fails, with per-event-type throttling
+- **Critical Error Alerts** - Optional Mattermost notifications for unreachable validators, submission errors and deploy failures, with per-event-type throttling
 
 ---
 
@@ -77,6 +77,10 @@ Cargo fetches it automatically; `Cargo.lock` records the exact Git source.
 Node protocol dependencies remain at `0ccc315d84b32d668e8db49cd56ba3c576693e15`.
 Phlo prices must fit positive `i64` and are encoded as uint256 protobuf values.
 
+This revision supplies the exact-integer API decoding and phlo-price signing
+required by the target node. Integration into the client's `dev` branch and a
+subsequent revision update require a separate compatibility check.
+
 ```bash
 # Clone the repository
 git clone https://github.com/asi-alliance/asi-chain-faucet.git
@@ -93,6 +97,24 @@ cargo run --release
 ```
 
 Server starts on `http://0.0.0.0:40470` by default (from .env.example).
+
+### Upgrading an existing backend
+
+Before restarting, explicitly set `FAUCET_AMOUNT=10000` and
+`FAUCET_MAX_BALANCE=20000` in the existing deployment configuration. Both now
+use ASI tokens. The old atomic `FAUCET_AMOUNT=1000000000000` would request
+one trillion ASI; the old example ceiling `2000000000000` also means whole
+ASI. The default `FAUCET_TOKEN_DECIMALS` has changed from 8 to 18: explicitly
+set it to the actual chain precision, even if the deployment previously set
+only `FAUCET_AMOUNT`. Review all three settings together. Startup logs show
+the effective amount and ceiling in ASI and atomic units.
+
+The observer must serve `/api/balance/{address}` and
+`/api/deploy-finalization-status/{id}`. Missing finalization support is reported
+as an error when querying deploy status. Preserve `FAUCET_CLAIMS_DIR` and
+`FAUCET_NETWORK_ID` across upgrades. Follow the
+[reservation recovery procedure](server/CONFIGURATION.md#inspecting-and-recovering-a-stuck-reservation)
+before changing any journal files.
 
 ### Running the Frontend
 
@@ -115,6 +137,20 @@ npm run dev
 
 Frontend available at `http://localhost:5173`.
 
+### Running the Frontend in Docker
+
+The image builds with `VITE_BASE_URL=/api`, which takes precedence over a value
+in `web/.env`. Nginx forwards `/api/` to `http://host.docker.internal:40470/`.
+Run the backend with `SERVER_HOST=0.0.0.0` and `SERVER_PORT=40470` for this
+configuration. The web Compose service sets
+`extra_hosts: ["host.docker.internal:host-gateway"]` so the container can reach
+the host on Linux.
+
+From the `web/` directory, run `docker compose up --build -d`; the frontend is
+then available at `http://localhost:3000`. `nginx.conf.template` is copied as a
+static config, without environment substitution. Changing the proxy's backend
+host or port requires editing that file and rebuilding the image.
+
 ---
 
 ## Project Structure
@@ -126,9 +162,6 @@ asi-chain-faucet/
 │   │   ├── api/               # API layer (handlers, models, router)
 │   │   ├── core/              # Application core
 │   │   ├── services/          # Business logic (blockchain interaction)
-│   │   ├── crypto.rs          # Cryptographic operations (keys, vault addresses)
-│   │   ├── vault.rs           # Vault transfer Rholang templates
-│   │   ├── http_client.rs     # Direct HTTP client for node API
 │   │   ├── config.rs          # Configuration management
 │   │   └── main.rs            # Application entry point
 │   ├── Cargo.toml             # Rust dependencies
@@ -218,15 +251,15 @@ asi-chain-faucet/
 - Rust - Repository-pinned nightly toolchain
 - Axum 0.8 - Modern async web framework
 - Tokio 1.0 - Asynchronous runtime
-- Tower-HTTP 0.5 - HTTP middleware
+- Tower-HTTP 0.7 - HTTP middleware
 - secp256k1 + blake2 - Cryptographic signing
 - f1r3fly-models - Protobuf types for deploy signing
 
 **Frontend:**
-- React 19.1 - UI framework
-- TypeScript 5.7 - Type-safe JavaScript
-- Vite 6.2 - Fast build tool
-- Redux Toolkit 2.6 - State management
+- React 19.3 - UI framework
+- TypeScript 5.9 - Type-safe JavaScript
+- Vite 6.4 - Fast build tool
+- Redux Toolkit 2.14 - State management
 
 **Infrastructure:**
 - Docker - Containerization
@@ -243,7 +276,7 @@ See [server/Cargo.toml](server/Cargo.toml) and [web/package.json](web/package.js
 **[server/README.md](server/README.md)** - Backend overview, quick start, architecture, and navigation
 
 **[server/API.md](server/API.md)** - Complete API reference
-- All endpoints (POST /transfer, GET /balance, GET /deploy)
+- All endpoints (GET /config, POST /transfer, GET /balance, GET /deploy)
 - Request/response formats
 - Error codes and handling
 - CORS configuration

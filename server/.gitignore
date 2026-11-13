@@ -25,3 +25,6 @@ Thumbs.db
 
 
 *.log
+
+# Durable claim journal
+.faucet-claims/

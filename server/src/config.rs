@@ -1,4 +1,4 @@
-use crate::utils::NodeSocket;
+use crate::utils::{tokens_to_units, NodeSocket};
 use std::env;
 use std::error::Error;
 use std::fmt;
@@ -32,6 +32,8 @@ pub struct AppConfig {
     pub faucet_max_balance: num_bigint::BigUint,
     pub native_token_decimals: u32,
     pub private_key: Option<Secret>,
+    pub claims_directory: std::path::PathBuf,
+    pub network_id: String,
 
     pub node_sockets: Vec<NodeSocket>,
     /// `host:http_port` list, rendered once at startup for alert context.
@@ -70,17 +72,15 @@ impl AppConfig {
         let node_hosts_display = Self::render_node_hosts(&node_sockets);
 
         let native_token_decimals = env::var("FAUCET_TOKEN_DECIMALS")
-            .unwrap_or_else(|_| "8".into())
+            .unwrap_or_else(|_| "18".into())
             .parse::<u32>()?;
         anyhow::ensure!(
             native_token_decimals <= 18,
             "FAUCET_TOKEN_DECIMALS must be in 0..18"
         );
-        let faucet_amount = node_cli::vault::parse_amount(
-            &env::var("FAUCET_AMOUNT").unwrap_or_else(|_| "1000000000000".into()),
-        )?;
-        let faucet_max_balance = node_cli::vault::tokens_to_dust(
-            &env::var("FAUCET_MAX_BALANCE").unwrap_or_else(|_| "2000000000000".into()),
+        let (faucet_amount, faucet_max_balance) = parse_faucet_amounts(
+            &env::var("FAUCET_AMOUNT").unwrap_or_else(|_| "10000".into()),
+            &env::var("FAUCET_MAX_BALANCE").unwrap_or_else(|_| "20000".into()),
             native_token_decimals,
         )?;
 
@@ -89,6 +89,10 @@ impl AppConfig {
             faucet_max_balance,
             native_token_decimals,
             private_key: Self::parse_env_secret("PRIVATE_KEY"),
+            claims_directory: env::var("FAUCET_CLAIMS_DIR")
+                .unwrap_or_else(|_| ".faucet-claims".into())
+                .into(),
+            network_id: env::var("FAUCET_NETWORK_ID").unwrap_or_else(|_| "default".into()),
 
             node_sockets,
             node_hosts_display,
@@ -196,36 +200,56 @@ impl AppConfig {
             .unwrap_or(default)
     }
 
-    pub fn validate(&self) -> Result<(), Box<dyn Error>> {
-        if self.private_key.is_none() {
-            return Err("PRIVATE_KEY environment variable is required".into());
-        }
-
-        if self.faucet_amount == num_bigint::BigUint::default() {
-            return Err("FAUCET_AMOUNT must be greater than 0".into());
-        }
-
-        if self.faucet_max_balance == num_bigint::BigUint::default() {
-            return Err("FAUCET_MAX_BALANCE must be greater than 0".into());
-        }
-
-        if self.deploy_check_interval_sec == 0 || self.deploy_phlo_limit <= 0 {
-            return Err("Deploy check interval and phlo limit must be positive".into());
-        }
-
-        if self.alerts_enabled && self.mattermost_webhook_url.is_none() {
-            return Err(
-                "MATTERMOST_WEBHOOK_URL environment variable is required when ALERTS_ENABLED=true"
-                    .into(),
-            );
-        }
-
+    pub fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.private_key.is_some(),
+            "PRIVATE_KEY environment variable is required"
+        );
+        validate_faucet_amounts(&self.faucet_amount, &self.faucet_max_balance)?;
+        anyhow::ensure!(
+            self.deploy_check_interval_sec > 0 && self.deploy_phlo_limit > 0,
+            "Deploy check interval and phlo limit must be positive"
+        );
+        anyhow::ensure!(
+            !self.alerts_enabled || self.mattermost_webhook_url.is_some(),
+            "MATTERMOST_WEBHOOK_URL environment variable is required when ALERTS_ENABLED=true"
+        );
         Ok(())
     }
 
     pub fn server_address(&self) -> String {
         format!("{}:{}", self.server_host, self.server_port)
     }
+}
+
+// Both environment amounts use ASI tokens. Convert exactly once at startup;
+// API responses, deploys and persisted reservations continue to use atomic units.
+fn parse_faucet_amounts(
+    amount: &str,
+    ceiling: &str,
+    decimals: u32,
+) -> anyhow::Result<(num_bigint::BigUint, num_bigint::BigUint)> {
+    let amount = tokens_to_units(amount, decimals)
+        .map_err(|error| anyhow::anyhow!("Invalid FAUCET_AMOUNT (ASI tokens): {error}"))?;
+    let ceiling = tokens_to_units(ceiling, decimals)
+        .map_err(|error| anyhow::anyhow!("Invalid FAUCET_MAX_BALANCE (ASI tokens): {error}"))?;
+    validate_faucet_amounts(&amount, &ceiling)?;
+    Ok((amount, ceiling))
+}
+
+fn validate_faucet_amounts(
+    amount: &num_bigint::BigUint,
+    ceiling: &num_bigint::BigUint,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        *amount != num_bigint::BigUint::default(),
+        "FAUCET_AMOUNT must be greater than 0"
+    );
+    anyhow::ensure!(
+        *ceiling != num_bigint::BigUint::default(),
+        "FAUCET_MAX_BALANCE must be greater than 0"
+    );
+    Ok(())
 }
 
 pub fn is_eligible(balance: &str, ceiling: &num_bigint::BigUint) -> anyhow::Result<bool> {
@@ -236,13 +260,43 @@ pub fn is_eligible(balance: &str, ceiling: &num_bigint::BigUint) -> anyhow::Resu
 
 #[cfg(test)]
 mod amount_tests {
-    use super::is_eligible;
-    use node_cli::vault::{parse_amount, tokens_to_dust};
+    use super::{is_eligible, tokens_to_units};
+    use node_cli::vault::parse_amount;
+
+    #[test]
+    fn distribution_amount_is_independent_of_eligibility_ceiling() {
+        for decimals in [8, 18] {
+            assert!(super::parse_faucet_amounts("200000.00000001", "20000", decimals).is_ok());
+            assert!(super::parse_faucet_amounts("0", "20000", decimals).is_err());
+            assert!(super::parse_faucet_amounts("10000", "0", decimals).is_err());
+        }
+    }
+
+    #[test]
+    fn environment_amounts_share_token_units_at_both_precisions() {
+        for decimals in [8, 18] {
+            let (amount, ceiling) =
+                super::parse_faucet_amounts("10000", "20000", decimals).unwrap();
+            let scale = num_bigint::BigUint::from(10u32).pow(decimals);
+            assert_eq!(amount, &scale * 10000u32);
+            assert_eq!(ceiling, &scale * 20000u32);
+        }
+        let (amount, ceiling) =
+            super::parse_faucet_amounts("10.000000000000000001", "20", 18).unwrap();
+        assert_eq!(amount.to_string(), "10000000000000000001");
+        assert_eq!(ceiling.to_string(), "20000000000000000000");
+        for invalid in ["-1", "1e4", "10000 ASI", "0.0000000000000000001"] {
+            assert!(super::parse_faucet_amounts(invalid, "20000", 18).is_err());
+            assert!(super::parse_faucet_amounts("10000", invalid, 18).is_err());
+        }
+        let overflow = (num_bigint::BigUint::from(1u32) << 256usize).to_string();
+        assert!(super::parse_faucet_amounts(&overflow, "20000", 18).is_err());
+    }
 
     #[test]
     fn eligibility_is_exact_at_both_precisions() {
         for decimals in [8, 18] {
-            let ceiling = tokens_to_dust("10", decimals).unwrap();
+            let ceiling = tokens_to_units("10", decimals).unwrap();
             assert!(is_eligible(&(&ceiling - 1u32).to_string(), &ceiling).unwrap());
             assert!(!is_eligible(&ceiling.to_string(), &ceiling).unwrap());
             assert!(!is_eligible(&(&ceiling + 1u32).to_string(), &ceiling).unwrap());
@@ -250,8 +304,23 @@ mod amount_tests {
     }
 
     #[test]
+    fn twenty_thousand_token_threshold_rejects_thirty_thousand() {
+        for decimals in [8, 18] {
+            let ceiling = tokens_to_units("20000", decimals).unwrap();
+            assert!(is_eligible(&(&ceiling - 1u32).to_string(), &ceiling).unwrap());
+            for tokens in ["20000", "30000"] {
+                assert!(!is_eligible(
+                    &tokens_to_units(tokens, decimals).unwrap().to_string(),
+                    &ceiling
+                )
+                .unwrap());
+            }
+        }
+    }
+
+    #[test]
     fn wide_amounts_and_invalid_balances() {
-        let wide = tokens_to_dust("10.000000000000000001", 18).unwrap();
+        let wide = tokens_to_units("10.000000000000000001", 18).unwrap();
         assert_eq!(wide.to_string(), "10000000000000000001");
         assert!(is_eligible("9007199254740993", &wide).unwrap());
         let maximum = (num_bigint::BigUint::from(1u32) << 256usize) - 1u32;

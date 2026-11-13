@@ -31,6 +31,10 @@ rustc --version
 cargo --version
 ```
 
+The backend uses `nightly-2026-02-09`, selected automatically by
+`server/rust-toolchain.toml`. Install it with
+`rustup toolchain install nightly-2026-02-09` if needed.
+
 **System Dependencies:**
 ```bash
 # Ubuntu/Debian
@@ -96,8 +100,9 @@ Create a `.env` file with development-specific settings:
 
 ```bash
 # Development Configuration
-FAUCET_AMOUNT=10000000000000
-FAUCET_MAX_BALANCE=5000000000000
+FAUCET_TOKEN_DECIMALS=18  # Must match the development chain
+FAUCET_AMOUNT=10000      # ASI tokens
+FAUCET_MAX_BALANCE=20000 # ASI tokens
 PRIVATE_KEY=<dev_private_key>
 
 # Local or testnet nodes
@@ -181,10 +186,7 @@ curl -X POST http://localhost:40470/transfer \
 src/
 ├── main.rs              # Entry point, logging setup
 ├── config.rs            # Configuration loading and validation
-├── utils.rs             # Node selection, validation
-├── crypto.rs            # Key handling, vault address generation
-├── vault.rs             # Vault transfer Rholang templates
-├── http_client.rs       # Direct HTTP client for node API
+├── utils.rs             # Token conversion alias, node selection, validation
 │
 ├── core/                # Application core
 │   ├── mod.rs
@@ -205,8 +207,15 @@ src/
 │
 └── services/            # Business logic
     ├── mod.rs
+    ├── alerts.rs        # Mattermost notifications
+    ├── claims.rs        # Durable per-recipient reservations
     └── node_cli.rs      # Blockchain interaction service
 ```
+
+The faucet's `utils::tokens_to_units` is a local alias for
+`node_cli::vault::tokens_to_dust`. The Rust-client API keeps its original name.
+Reservations are persisted before submission and reconciled on a later claim;
+the backend does not poll them in the background.
 
 ### Adding New Endpoints
 

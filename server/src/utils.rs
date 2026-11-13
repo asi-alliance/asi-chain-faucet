@@ -4,6 +4,8 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+pub(crate) use node_cli::vault::tokens_to_dust as tokens_to_units;
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct NodeSocket {
     pub host: String,

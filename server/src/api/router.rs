@@ -27,6 +27,7 @@ async fn monetary_config(
     axum::extract::State(state): axum::extract::State<AppState>,
 ) -> axum::Json<serde_json::Value> {
     axum::Json(serde_json::json!({
+        "eligibility_policy": "strict_pre_claim_threshold",
         "native_token_decimals": state.config.native_token_decimals,
         "faucet_amount": state.config.faucet_amount.to_string(),
         "eligibility_ceiling": state.config.faucet_max_balance.to_string(),
