@@ -59,23 +59,18 @@ rustup component add clippy
 
 ### Initial Setup
 
-1. **Clone repository with submodules:**
+1. **Clone the repository:**
 
 ```bash
-git clone --recursive https://github.com/asi-alliance/asi-chain-faucet.git
+git clone https://github.com/asi-alliance/asi-chain-faucet.git
 cd asi-chain-faucet/server
 ```
 
-If already cloned without `--recursive`:
-```bash
-git submodule init
-git submodule update
-```
-
-The `rust-client` submodule pins [asi-alliance/asi-chain-client, branch `rust-dev`](https://github.com/asi-alliance/asi-chain-client/tree/rust-dev)
-at `5d1c9b4d12e33ec8b64a74a28df196ef03478e73`. For an existing checkout,
-run `git submodule sync --recursive` before updating. `git submodule update`
-checks out the recorded commit rather than the moving branch tip.
+The backend uses [asi-alliance/asi-chain-client, branch `rust-dev`](https://github.com/asi-alliance/asi-chain-client/tree/rust-dev)
+as a Cargo git dependency pinned to `5d1c9b4d12e33ec8b64a74a28df196ef03478e73`.
+Cargo fetches it automatically; `Cargo.lock` records the exact Git source.
+Node protocol dependencies remain at `0ccc315d84b32d668e8db49cd56ba3c576693e15`.
+Phlo prices must fit positive `i64` and are encoded as uint256 protobuf values.
 
 2. **Create configuration file:**
 
@@ -375,19 +370,17 @@ sudo apt install protobuf-compiler
 brew install protobuf
 ```
 
-#### "submodule `rust-client` is not initialized"
+#### Client dependency fetch fails
 
-**Solution:**
+Cargo downloads the pinned client revision from GitHub. Verify network access,
+then retry from `server`:
+
 ```bash
-git submodule init
-git submodule update
+cargo fetch --locked
 ```
 
-To update `rust-client` to a newer version, check out the desired commit inside `server/rust-client` and stage the superproject change:
-```bash
-git -C server/rust-client checkout <commit>
-git add server/rust-client
-```
+To change the client revision, update `rev` in `server/Cargo.toml`, refresh
+`server/Cargo.lock`, and run the backend checks before committing both files.
 
 #### "error: failed to compile openssl-sys"
 

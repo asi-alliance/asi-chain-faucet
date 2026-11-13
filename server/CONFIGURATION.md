@@ -31,14 +31,16 @@ Unavailable, malformed, negative, or inexact balance responses do not enable cla
 Balance reads retain the system-vault exploratory query and the configured
 `EXPLORATORY_RETRY_BUDGET_SEC` for observer capacity refusals.
 
-The Rust-client submodule selects [asi-alliance/asi-chain-client, branch `rust-dev`](https://github.com/asi-alliance/asi-chain-client/tree/rust-dev) at
-`5d1c9b4d12e33ec8b64a74a28df196ef03478e73`, with protocol dependencies pinned
-to node `0ccc315d84b32d668e8db49cd56ba3c576693e15`. The validator and observer
-must support this client's uint256 deploy signing format and exact JSON amounts.
+The backend uses [asi-alliance/asi-chain-client, branch `rust-dev`](https://github.com/asi-alliance/asi-chain-client/tree/rust-dev)
+as a Cargo git dependency pinned to `5d1c9b4d12e33ec8b64a74a28df196ef03478e73`.
+Cargo fetches it automatically; `Cargo.lock` records the exact Git source.
+Node protocol dependencies remain at `0ccc315d84b32d668e8db49cd56ba3c576693e15`.
+Phlo prices must fit positive `i64` and are encoded as uint256 protobuf values.
+The validator and observer must support the uint256 monetary wire protocol.
 The ASI system-vault transfer ABI and exact balance query remain in use.
-`minPhloPrice` and deploy-detail `phloPrice` are canonical decimal JSON strings.
-The faucet requires `minPhloPrice` to fit positive `i64`, as required by the
-pinned client's `DeployOptions`; signed deploys encode the price as 32 bytes.
+HTTP integer and Phlo price responses accept string and legacy numeric encodings.
+Balances and transfer amounts remain exact uint256 values. A minimum Phlo price
+outside the client i64 range fails before signing.
 Build with the committed `nightly-2026-02-09` toolchain and `Cargo.lock`.
 
 The backend reads environment variables and a `.env` file at startup. Monetary
