@@ -19,23 +19,22 @@ For complete project documentation, see the [main README](../README.md) in the r
 
 ### Prerequisites
 
-- Rust 1.77 or higher
+- Rust nightly selected by [rust-toolchain.toml](rust-toolchain.toml)
 - Protocol Buffers Compiler: `apt install protobuf-compiler`
 
 ### Setup
 
-1. **Initialize submodules:**
+1. **Fetch dependencies:**
 
    ```bash
-   git submodule init
-   git submodule update
+   cargo fetch --locked
    ```
 
-   The `rust-client` submodule is pinned to a specific commit recorded by the superproject (currently `c3a5f086e1fd7ae54f5f8982e92359a8ac0ce3cc`). `git submodule update` checks out exactly that commit. To update it, check out the desired commit inside `server/rust-client` and stage the change:
-   ```bash
-   git -C server/rust-client checkout <commit>
-   git add server/rust-client
-   ```
+   The backend uses [asi-alliance/asi-chain-client, branch `rust-dev`](https://github.com/asi-alliance/asi-chain-client/tree/rust-dev)
+   as a Cargo git dependency pinned to `5d1c9b4d12e33ec8b64a74a28df196ef03478e73`.
+   Cargo fetches it automatically; `Cargo.lock` records the exact Git source.
+   Node protocol dependencies remain at `0ccc315d84b32d668e8db49cd56ba3c576693e15`.
+   Phlo prices must fit positive `i64` and are encoded as uint256 protobuf values.
 
 2. **Configure environment:**
 

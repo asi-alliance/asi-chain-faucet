@@ -121,12 +121,12 @@ Transfer rejected (400 Bad Request):
    - Only alphanumeric characters allowed
 
 2. **Balance Check:**
-   - Recipient balance must be below `FAUCET_MAX_BALANCE` (default: 20,000 ASI)
+   - Recipient balance must be strictly below `FAUCET_MAX_BALANCE`, configured in whole tokens (historical default: 2,000,000,000,000 ASI)
    - Balance checked before transfer is initiated
 
 3. **Amount:**
    - Transfer amount is configured via `FAUCET_AMOUNT` environment variable
-   - Default: 10,000 units (smallest unit)
+   - Default: 1,000,000,000,000 atomic units (10,000 ASI at the default 8 decimals)
 
 **Processing Flow:**
 
@@ -182,7 +182,7 @@ GET /balance/11114GuXVLzHJqUqDUJGLJJsn8c1ASIhztKZtG1KN1jV48XPBUdVzKBD3R HTTP/1.1
 
 | Field | Type | Description |
 |-------|------|-------------|
-| balance | string | Balance in smallest unit. In this implementation, 1 ASI = 10^8 (8 decimal places) |
+| balance | string | Exact uint256 balance in atomic units. One ASI = 10^FAUCET_TOKEN_DECIMALS atomic units (default 8 decimals). |
 
 **Error Responses:**
 
@@ -205,12 +205,12 @@ Query failed (400 Bad Request):
 ```
 
 **Implementation Details:**
-- Uses `wallet_balance_command` from node_cli
+- Queries the system vault through the node_cli exploratory API
 - Connects to read-only observer node via gRPC (port 40452)
 - Returns raw balance string without conversion
 - Balance is returned in the smallest unit 
-- Backend uses 10^8 as the conversion factor for balance calculations
-- Frontend should use `VITE_TOKEN_DECIMALS=8` to correctly display balances
+- Backend uses `FAUCET_TOKEN_DECIMALS` for balance calculations
+- Frontend reads precision and the atomic eligibility ceiling from `GET /config`
 
 **Response Time:**
 - Typical: 100-200ms
@@ -391,3 +391,14 @@ curl http://localhost:40470/deploy/d1f2e3b4a5c6789012345678901234567890abcdef12
 
 For configuration details, see [CONFIGURATION.md](CONFIGURATION.md).  
 For development information, see [DEVELOPMENT.md](DEVELOPMENT.md).
+# Monetary configuration
+
+`GET /config` returns public denomination and eligibility settings:
+
+```json
+{"native_token_decimals":18,"faucet_amount":"10000000000000000001","eligibility_ceiling":"100000000000000000000"}
+```
+
+Amounts are atomic-unit strings. Eligibility is strictly below the pre-claim
+ceiling. The response contains no signing or service credentials.
+

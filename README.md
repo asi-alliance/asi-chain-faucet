@@ -61,23 +61,26 @@ The ASI Chain Faucet consists of two main components working together to provide
 ### Prerequisites
 
 **Backend:**
-- Rust 1.77 or higher
+- Rust nightly selected by [server/rust-toolchain.toml](server/rust-toolchain.toml)
 - Protocol Buffers Compiler
 - Make and Perl
 
 **Frontend:**
-- Node.js 18.x or higher
+- Node.js 24.x
 - npm 9.x or higher
 
 ### Running the Backend
+
+The backend uses [asi-alliance/asi-chain-client, branch `rust-dev`](https://github.com/asi-alliance/asi-chain-client/tree/rust-dev)
+as a Cargo git dependency pinned to `5d1c9b4d12e33ec8b64a74a28df196ef03478e73`.
+Cargo fetches it automatically; `Cargo.lock` records the exact Git source.
+Node protocol dependencies remain at `0ccc315d84b32d668e8db49cd56ba3c576693e15`.
+Phlo prices must fit positive `i64` and are encoded as uint256 protobuf values.
 
 ```bash
 # Clone the repository
 git clone https://github.com/asi-alliance/asi-chain-faucet.git
 cd asi-chain-faucet
-
-# Initialize and update submodules (rust-client is pinned to a commit recorded by the superproject)
-git submodule update --init --recursive
 
 cd server
 
@@ -97,14 +100,13 @@ Server starts on `http://0.0.0.0:40470` by default (from .env.example).
 cd ../web
 
 # Install dependencies
-npm install
+npm ci
 
 # Configure environment
 # Create .env file with:
 # VITE_BASE_URL=http://localhost:40470  # Default is http://localhost:3001 if not set
 # VITE_USER_GUIDE_URL=https://docs.asichain.io/faucet/usage  # User guide link opened from the help icon
-# VITE_FAUCET_BALANCE_LIMIT=20000
-# VITE_TOKEN_DECIMALS=8
+# Amount precision and eligibility come from the backend's GET /config endpoint.
 # VITE_MAX_POLLS_MINUTES_COUNT=15  # How long the UI polls transfer status before giving up, in minutes (default is 15)
 
 # Start development server
@@ -213,7 +215,7 @@ asi-chain-faucet/
 ### Technology Stack
 
 **Backend:**
-- Rust 1.77 - Systems programming language
+- Rust - Repository-pinned nightly toolchain
 - Axum 0.8 - Modern async web framework
 - Tokio 1.0 - Asynchronous runtime
 - Tower-HTTP 0.5 - HTTP middleware
@@ -269,6 +271,33 @@ See [server/Cargo.toml](server/Cargo.toml) and [web/package.json](web/package.js
 ---
 
 ## Contributing
+
+### Tests and continuous integration
+
+The **Faucet tests** workflow runs for pull requests targeting `dev` or `main`,
+pushes to either branch, and manual runs. It checks backend formatting and runs
+`cargo test --locked --all-targets` with the toolchain in
+`server/rust-toolchain.toml` and the committed Cargo git dependency. A separate job
+uses Node.js 24 to run the frontend amount tests, TypeScript/Vite build and lint.
+Test logs are retained as workflow artifacts for seven days, including failed
+test runs. Superseded runs for the same PR are cancelled.
+
+To run the same checks locally after installing the prerequisites:
+
+```bash
+(cd server && cargo fmt --all -- --check && cargo test --locked --all-targets)
+(cd web && npm ci --no-audit --no-fund && npm run test:amounts && npm run build && npm run lint)
+```
+
+The frontend dependency lockfile is committed and used by CI and Docker builds.
+These tests use local fixtures and HTTP stubs; they
+need no validator keys, live nodes, or deployment credentials.
+
+The frontend keeps TypeScript 5.9 within the supported `typescript-eslint` range
+and Vite 6.4 on its supported security-fix line. A scoped `minimatch` override for
+`@typescript-eslint/typescript-estree` selects the patched 11.0.1+ release for
+[GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249).
+Reassess this override when the upstream dependency range accepts a patched release.
 
 Known issues and bugs are tracked in the [Issues](https://github.com/asi-alliance/asi-chain-faucet/issues) section.  
 If you encounter a problem that is not listed, please feel free to open a new issue and provide as much detail as possible.

@@ -1,7 +1,7 @@
 import { type ReactElement } from "react";
 import "./style.css";
 export interface IAddressBalanceProps {
-    value: number;
+    value: string;
     coin: string;
 }
 

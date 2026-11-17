@@ -2,10 +2,12 @@ use crate::config::AppConfig;
 use crate::services::alerts::{AlertEvent, AlertKind, AlertService};
 use crate::utils::choose_random_node;
 use anyhow::{Context, Result};
-use node_cli::f1r3fly_api::DeployFinalizationStatus;
-use node_cli::utils::CryptoUtils;
+use node_cli::f1r3fly_api::{DeployFinalizationStatus, NodeStatus};
 use node_cli::vault::build_transfer_rholang;
-use node_cli::{DeployOptions, Endpoint, F1r3flyApi, NodeHttp, SigningKey};
+use node_cli::{
+    ConnectionConfig, DeployOptions, Endpoint, F1r3flyApi, F1r3flyConnectionManager, NodeHttp,
+    SigningKey,
+};
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, warn};
@@ -42,55 +44,55 @@ impl NodeCliService {
             }
         };
 
-        let key = SigningKey::from_hex(private_key_hex)?;
-        let api = F1r3flyApi::new(endpoint(&node.host, node.grpc_port)?)?;
-        let pk_hex = CryptoUtils::serialize_public_key(&key.public_key(), false);
-        let from_address = CryptoUtils::generate_vault_address(&pk_hex)?;
-        let amount = self
-            .config
-            .faucet_amount
-            .to_string()
-            .parse()
-            .context("invalid faucet amount")?;
-        let rholang = build_transfer_rholang(&from_address, to_address, &amount)?;
-        let phlo_limit = u64::try_from(self.config.deploy_phlo_limit)
-            .context("DEPLOY_PHLO_LIMIT must be nonnegative")?;
-        let signed = api
-            .prepare(
-                &rholang,
-                &DeployOptions::default().with_phlo_limit(phlo_limit),
-            )
-            .await?
-            .sign(key.secret_key());
-        let id = signed.id();
-        match api.submit(&signed).await {
-            Ok(id) => Ok(id),
-            Err(error) => {
-                let failure = TransferSubmissionError::from_client(id, error);
-                if !matches!(failure, TransferSubmissionError::Admission { .. }) {
-                    self.alerts.notify(
-                        AlertEvent::new(AlertKind::TransferDeployFailed, failure.to_string())
-                            .with_context("to", to_address),
-                    );
-                }
-                Err(failure.into())
-            }
-        }
+        let api = F1r3flyConnectionManager::new(ConnectionConfig::new(
+            Endpoint::parse(&format!("http://{}:{}", node.host, node.grpc_port))?,
+            Endpoint::parse(&format!("http://{}:{}", node.host, node.http_port))?,
+            SigningKey::from_hex(private_key_hex)?,
+        ))?;
+        let rholang =
+            build_transfer_rholang(&api.get_address()?, to_address, &self.config.faucet_amount)?;
+        let status: NodeStatus = serde_json::from_value(
+            NodeHttp::new(Endpoint::parse(&format!(
+                "http://{}:{}",
+                node.host, node.http_port
+            ))?)?
+            .get_json("/api/status")
+            .await?,
+        )
+        .context("Invalid node status")?;
+        let decimals = status
+            .native_token_decimals
+            .context("Missing native token decimals")?;
+        anyhow::ensure!(
+            decimals == self.config.native_token_decimals,
+            "Configured decimals do not match node runtime"
+        );
+        let mut options =
+            DeployOptions::default().with_phlo_limit(u64::try_from(self.config.deploy_phlo_limit)?);
+        // rust-dev accepts an i64 price and encodes it as uint256 for signing.
+        options.phlo_price = status
+            .min_phlo_price
+            .try_into()
+            .context("Node minimum Phlo price exceeds the client i64 range")?;
+        api.deploy(&rholang, &options).await.map_err(|e| {
+            self.alerts.notify(
+                AlertEvent::new(AlertKind::TransferDeployFailed, e.to_string())
+                    .with_context("to", to_address),
+            );
+            anyhow::anyhow!("Deploy failed: {}", e)
+        })
     }
 
     pub async fn get_balance(&self, address: &str) -> Result<String> {
         let rholang_query = build_balance_query(address)?;
-        let api = F1r3flyApi::new(endpoint(
-            &self.config.observer_host,
-            self.config.observer_grpc_port,
-        )?)?
+        let api = F1r3flyApi::new(Endpoint::parse(&format!(
+            "http://{}:{}",
+            self.config.observer_host, self.config.observer_grpc_port
+        ))?)?
         .with_exploratory_retry_budget(Duration::from_secs(
             self.config.exploratory_retry_budget_sec,
         ));
-        let result = api
-            .exploratory_deploy(&rholang_query, None, false)
-            .await
-            .map_err(|e| anyhow::Error::msg(e.to_string()))?;
+        let result = api.exploratory_deploy(&rholang_query, None, false).await?;
         Ok(result.value()?.as_amount()?.to_string())
     }
 
@@ -101,10 +103,7 @@ impl NodeCliService {
 
         let mut latest = None;
         for attempt in 0..max_attempts {
-            let api = NodeHttp::new(endpoint(
-                &self.config.observer_host,
-                self.config.observer_http_port,
-            )?)?;
+            let api = self.observer()?;
             let lib_status = api
                 .deploy_finalization_status(&id)
                 .await
@@ -136,6 +135,13 @@ impl NodeCliService {
         }
 
         latest.ok_or_else(|| anyhow::anyhow!("no deploy status returned"))
+    }
+
+    fn observer(&self) -> Result<NodeHttp> {
+        Ok(NodeHttp::new(Endpoint::parse(&format!(
+            "http://{}:{}",
+            self.config.observer_host, self.config.observer_http_port
+        ))?)?)
     }
 
     /// Read `/api/deploy/{id}` and return its `(systemDeployError, errored)`.
@@ -194,10 +200,6 @@ impl NodeCliService {
     }
 }
 
-fn endpoint(host: &str, port: u16) -> node_cli::Result<Endpoint> {
-    Endpoint::parse(&format!("http://{host}:{port}"))
-}
-
 #[derive(Debug)]
 pub enum TransferSubmissionError {
     Admission {
@@ -250,7 +252,8 @@ impl std::fmt::Display for TransferSubmissionError {
 }
 impl std::error::Error for TransferSubmissionError {}
 
-// Preserve the existing system-vault balance ABI while migrating the client.
+// Keep the system-vault ABI and exploratory-capacity retry behavior used by
+// existing observers while decoding all integer kinds as exact uint256 amounts.
 fn build_balance_query(address: &str) -> node_cli::Result<String> {
     node_cli::vault::validate_address(address)?;
     Ok(format!(
