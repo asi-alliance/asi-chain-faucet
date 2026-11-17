@@ -78,7 +78,8 @@ Preparation failures have no deploy ID:
 
 | HTTP status | `error` | Meaning |
 |-------------|---------|---------|
-| 503 | `deploy_pool_busy` or `deploy_admission_busy` | The node explicitly refused admission; a later request may create a new transfer. |
+| 503 | `deploy_pool_busy`, `deploy_admission_busy` or `invalid_deploy_window` | The node refused admission and stored nothing; a later request may create a new transfer. |
+| 502 | `deploy_too_large` or `deploy_expired` | The node refused the faucet's own deploy and stored nothing; the faucet raises an alert. |
 | 502 | `deploy_submission_unknown` | The response was missing, malformed, or lost. Check the returned ID before requesting another transfer. |
 | 400 | `deploy_rejected` | The node explicitly rejected the deploy. |
 | 502 | `FAUCET: Transfer failed` | The upstream node could not be reached or preparation failed before submission. |

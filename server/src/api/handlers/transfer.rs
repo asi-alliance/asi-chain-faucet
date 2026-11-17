@@ -102,11 +102,24 @@ pub async fn transfer_handler(
     }
 }
 
+/// Map a submission failure to an HTTP answer that keeps the node's exact code
+/// and the signed deploy ID:
+///
+/// - retryable admission refusals (`deploy_pool_busy`, `deploy_admission_busy`,
+///   `invalid_deploy_window`): 503, a later request can succeed;
+/// - final admission refusals of the faucet's own deploy (`deploy_too_large`,
+///   `deploy_expired`): 502, the requester cannot fix them;
+/// - untyped node rejections: 400 `deploy_rejected`;
+/// - lost or malformed responses: 502 `deploy_submission_unknown`.
 fn transfer_error_response(error: &anyhow::Error) -> (StatusCode, Json<ErrorResponse>) {
     let (status, code, deploy_id) = match error.downcast_ref::<TransferSubmissionError>() {
-        Some(failure @ TransferSubmissionError::Admission { code, .. }) => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            code.as_str(),
+        Some(failure @ TransferSubmissionError::Admission { reason, .. }) => (
+            if reason.is_retryable() {
+                StatusCode::SERVICE_UNAVAILABLE
+            } else {
+                StatusCode::BAD_GATEWAY
+            },
+            reason.code(),
             Some(failure.deploy_id().to_string()),
         ),
         Some(failure @ TransferSubmissionError::Unknown { .. }) => (
@@ -131,17 +144,37 @@ fn transfer_error_response(error: &anyhow::Error) -> (StatusCode, Json<ErrorResp
 #[cfg(test)]
 mod tests {
     use super::*;
+    use node_cli::DeployAdmissionReason;
+
+    fn admission(reason: DeployAdmissionReason) -> anyhow::Error {
+        anyhow::Error::new(TransferSubmissionError::Admission {
+            deploy_id: "original-id".into(),
+            reason,
+            message: format!("{}: not accepted", reason.code()),
+        })
+    }
 
     #[test]
-    fn explicit_admission_refusals_retain_the_exact_code_and_id() {
-        for code in ["deploy_pool_busy", "deploy_admission_busy"] {
-            let error = anyhow::Error::new(TransferSubmissionError::Admission {
-                deploy_id: "original-id".into(),
-                code: code.into(),
-            });
-            let (status, Json(body)) = transfer_error_response(&error);
-            assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-            assert_eq!(body.error, code);
+    fn admission_refusals_retain_the_exact_code_and_id() {
+        for (reason, status) in [
+            (
+                DeployAdmissionReason::PoolBusy,
+                StatusCode::SERVICE_UNAVAILABLE,
+            ),
+            (
+                DeployAdmissionReason::AdmissionBusy,
+                StatusCode::SERVICE_UNAVAILABLE,
+            ),
+            (
+                DeployAdmissionReason::OutsideWindow,
+                StatusCode::SERVICE_UNAVAILABLE,
+            ),
+            (DeployAdmissionReason::TooLarge, StatusCode::BAD_GATEWAY),
+            (DeployAdmissionReason::Expired, StatusCode::BAD_GATEWAY),
+        ] {
+            let (actual, Json(body)) = transfer_error_response(&admission(reason));
+            assert_eq!(actual, status, "{reason}");
+            assert_eq!(body.error, reason.code());
             assert_eq!(body.deploy_id.as_deref(), Some("original-id"));
             assert!(body.details.unwrap().contains("not accepted"));
         }
