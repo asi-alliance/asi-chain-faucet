@@ -2197,7 +2197,7 @@ dependencies = [
 [[package]]
 name = "node_cli"
 version = "0.2.7"
-source = "git+https://github.com/asi-alliance/asi-chain-client.git?rev=5d1c9b4d12e33ec8b64a74a28df196ef03478e73#5d1c9b4d12e33ec8b64a74a28df196ef03478e73"
+source = "git+https://github.com/F1R3FLY-io/rust-client.git?rev=aa6f275d1e60ad5d92ae52beda8455615f7e6179#aa6f275d1e60ad5d92ae52beda8455615f7e6179"
 dependencies = [
  "blake2",
  "bs58",

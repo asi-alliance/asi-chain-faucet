@@ -5,8 +5,8 @@ use anyhow::{Context, Result};
 use node_cli::f1r3fly_api::{DeployFinalizationStatus, NodeStatus};
 use node_cli::vault::build_transfer_rholang;
 use node_cli::{
-    ConnectionConfig, DeployOptions, Endpoint, F1r3flyApi, F1r3flyConnectionManager, NodeHttp,
-    SigningKey,
+    ConnectionConfig, DeployAdmissionReason, DeployOptions, Endpoint, F1r3flyApi,
+    F1r3flyConnectionManager, NodeHttp, SigningKey,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -74,13 +74,27 @@ impl NodeCliService {
             .min_phlo_price
             .try_into()
             .context("Node minimum Phlo price exceeds the client i64 range")?;
-        api.deploy(&rholang, &options).await.map_err(|e| {
-            self.alerts.notify(
-                AlertEvent::new(AlertKind::TransferDeployFailed, e.to_string())
-                    .with_context("to", to_address),
-            );
-            anyhow::anyhow!("Deploy failed: {}", e)
-        })
+        // Sign once and keep the ID: a refusal or an unknown outcome must name
+        // the deploy that was sent, and the faucet never re-signs on its own.
+        let signed = api
+            .api()
+            .prepare(&rholang, &options)
+            .await?
+            .sign(api.config().signing_key.secret_key());
+        let id = signed.id();
+        match api.api().submit(&signed).await {
+            Ok(id) => Ok(id),
+            Err(error) => {
+                let failure = TransferSubmissionError::from_client(id, error);
+                if !failure.is_retryable_refusal() {
+                    self.alerts.notify(
+                        AlertEvent::new(AlertKind::TransferDeployFailed, failure.to_string())
+                            .with_context("to", to_address),
+                    );
+                }
+                Err(failure.into())
+            }
+        }
     }
 
     pub async fn get_balance(&self, address: &str) -> Result<String> {
@@ -200,16 +214,23 @@ impl NodeCliService {
     }
 }
 
+/// Why a signed transfer was not confirmed as accepted. Every variant keeps the
+/// ID of the deploy that was sent.
 #[derive(Debug)]
 pub enum TransferSubmissionError {
+    /// The node refused admission with one of its typed codes and stored nothing.
     Admission {
         deploy_id: String,
-        code: String,
+        reason: DeployAdmissionReason,
+        message: String,
     },
+    /// The request or its response was lost or malformed; the deploy may or
+    /// may not have been accepted.
     Unknown {
         deploy_id: String,
         cause: node_cli::Error,
     },
+    /// The node answered with an untyped rejection.
     Rejected {
         deploy_id: String,
         cause: node_cli::Error,
@@ -219,9 +240,12 @@ pub enum TransferSubmissionError {
 impl TransferSubmissionError {
     fn from_client(deploy_id: String, cause: node_cli::Error) -> Self {
         match cause {
-            node_cli::Error::DeployAdmissionRefused { reason, .. } => Self::Admission {
+            node_cli::Error::DeployAdmissionRefused {
+                reason, message, ..
+            } => Self::Admission {
                 deploy_id,
-                code: reason.code().to_string(),
+                reason,
+                message,
             },
             cause
                 if matches!(&cause, node_cli::Error::NodeRejected { message, .. }
@@ -232,6 +256,7 @@ impl TransferSubmissionError {
             cause => Self::Unknown { deploy_id, cause },
         }
     }
+
     pub fn deploy_id(&self) -> &str {
         match self {
             Self::Admission { deploy_id, .. }
@@ -239,17 +264,42 @@ impl TransferSubmissionError {
             | Self::Rejected { deploy_id, .. } => deploy_id,
         }
     }
+
+    /// A refusal that a later transfer request can get past: the pool or the
+    /// submission limit was full, or the validity height was not yet admissible.
+    pub fn is_retryable_refusal(&self) -> bool {
+        matches!(self, Self::Admission { reason, .. } if reason.is_retryable())
+    }
 }
 
 impl std::fmt::Display for TransferSubmissionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Admission { deploy_id, code } => write!(f, "Deploy {deploy_id} not accepted ({code}); please try again later"),
-            Self::Unknown { deploy_id, cause } => write!(f, "Submission outcome unknown for deploy {deploy_id}: {cause}. Check this ID before requesting another transfer"),
-            Self::Rejected { deploy_id, cause } => write!(f, "Deploy {deploy_id} rejected: {cause}"),
+            Self::Admission {
+                deploy_id,
+                reason,
+                message,
+            } if reason.is_retryable() => write!(
+                f,
+                "Deploy {deploy_id} not accepted ({reason}); please try again later: {message}"
+            ),
+            Self::Admission {
+                deploy_id,
+                reason,
+                message,
+            } => write!(f, "Deploy {deploy_id} not accepted ({reason}): {message}"),
+            Self::Unknown { deploy_id, cause } => write!(
+                f,
+                "Submission outcome unknown for deploy {deploy_id}: {cause}. \
+                 Check this ID before requesting another transfer"
+            ),
+            Self::Rejected { deploy_id, cause } => {
+                write!(f, "Deploy {deploy_id} rejected: {cause}")
+            }
         }
     }
 }
+
 impl std::error::Error for TransferSubmissionError {}
 
 // Keep the system-vault ABI and exploratory-capacity retry behavior used by
@@ -278,25 +328,38 @@ fn build_balance_query(address: &str) -> node_cli::Result<String> {
 #[cfg(test)]
 mod submission_tests {
     use super::*;
+
+    fn refusal(reason: DeployAdmissionReason) -> TransferSubmissionError {
+        TransferSubmissionError::from_client(
+            "signed-id".into(),
+            node_cli::Error::DeployAdmissionRefused {
+                deploy_id: "signed-id".into(),
+                reason,
+                message: format!("{}: not accepted", reason.code()),
+            },
+        )
+    }
+
     #[test]
-    fn only_typed_admission_is_a_known_transient_refusal() {
-        for reason in [
-            node_cli::DeployAdmissionReason::PoolBusy,
-            node_cli::DeployAdmissionReason::AdmissionBusy,
+    fn every_typed_admission_code_keeps_its_reason_and_the_signed_id() {
+        for (reason, retryable) in [
+            (DeployAdmissionReason::PoolBusy, true),
+            (DeployAdmissionReason::AdmissionBusy, true),
+            (DeployAdmissionReason::OutsideWindow, true),
+            (DeployAdmissionReason::TooLarge, false),
+            (DeployAdmissionReason::Expired, false),
         ] {
-            let error = TransferSubmissionError::from_client(
-                "signed-id".into(),
-                node_cli::Error::DeployAdmissionRefused {
-                    deploy_id: "signed-id".into(),
-                    reason,
-                    message: "busy".into(),
-                },
-            );
+            let error = refusal(reason);
             assert!(
-                matches!(&error, TransferSubmissionError::Admission { code, .. } if code == reason.code())
+                matches!(&error, TransferSubmissionError::Admission { reason: r, .. } if *r == reason)
             );
+            assert_eq!(error.is_retryable_refusal(), retryable, "{reason}");
             assert_eq!(error.deploy_id(), "signed-id");
         }
+    }
+
+    #[test]
+    fn transport_failures_are_unknown_outcomes_not_refusals() {
         let error = TransferSubmissionError::from_client(
             "signed-id".into(),
             node_cli::Error::Http {
@@ -307,6 +370,27 @@ mod submission_tests {
             },
         );
         assert!(matches!(error, TransferSubmissionError::Unknown { .. }));
+        assert!(!error.is_retryable_refusal());
         assert_eq!(error.deploy_id(), "signed-id");
+    }
+
+    #[test]
+    fn untyped_rejections_stay_rejections_and_empty_ones_stay_unknown() {
+        let rejected = TransferSubmissionError::from_client(
+            "signed-id".into(),
+            node_cli::Error::NodeRejected {
+                operation: "the deploy",
+                message: "Insufficient funds".into(),
+            },
+        );
+        assert!(matches!(rejected, TransferSubmissionError::Rejected { .. }));
+        let empty = TransferSubmissionError::from_client(
+            "signed-id".into(),
+            node_cli::Error::NodeRejected {
+                operation: "the deploy",
+                message: " ".into(),
+            },
+        );
+        assert!(matches!(empty, TransferSubmissionError::Unknown { .. }));
     }
 }

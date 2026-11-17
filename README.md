@@ -314,17 +314,25 @@ ASI Alliance founding members: Fetch.ai, SingularityNET, and CUDOS
 
 ## Draft node admission compatibility
 
-This draft pins ASI client [#6](https://github.com/asi-alliance/asi-chain-client/pull/6)
-at `62b633ab05bb9d4e54672e8c2db1437264c3437b` for node
-[#789](https://github.com/F1R3FLY-io/f1r3node-rust/pull/789), using the client
-nightly `2026-02-09` toolchain. Use the committed submodule revision.
+This draft pins the client from
+[F1R3FLY-io/rust-client#86](https://github.com/F1R3FLY-io/rust-client/pull/86)
+at `aa6f275d1e60ad5d92ae52beda8455615f7e6179` for node
+[#789](https://github.com/F1R3FLY-io/f1r3node-rust/pull/789). That commit is
+three commits on top of the current `rust-dev` pin; repin to a merged client
+commit before this leaves draft.
 
-Transfers are prepared and signed once before submission. An explicit admission
-refusal returns HTTP 503 with the exact `deploy_pool_busy` or
-`deploy_admission_busy` code and `deploy_id`. Unknown RPC outcomes return HTTP 502
-with `deploy_submission_unknown` and the original ID; check that ID before
-requesting a new transfer. The service does not retry or re-sign automatically.
-The UI displays these details and starts status polling only after acceptance.
-Balance reads retain exploratory-capacity retries; finalization and execution
-details use the observer HTTP port. This draft requires compatibility validation
-before merge and does not publish or deploy a new service.
+Transfers are prepared and signed once before submission, and every failure
+after signing returns the original `deploy_id`:
+
+- `deploy_pool_busy`, `deploy_admission_busy` and `invalid_deploy_window`
+  return HTTP 503 with that exact code; a later request may succeed.
+- `deploy_too_large` and `deploy_expired` return HTTP 502 with that exact code;
+  the node refused the faucet's own deploy and an alert is raised.
+- Lost or malformed RPC responses return HTTP 502 `deploy_submission_unknown`;
+  check that ID before requesting a new transfer.
+
+The service does not retry or re-sign automatically. The UI displays these
+details and starts status polling only after acceptance. Balance reads retain
+exploratory-capacity retries; finalization and execution details use the
+observer HTTP port. This draft requires compatibility validation against a
+#789 node before merge and does not publish or deploy a new service.
