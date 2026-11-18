@@ -31,6 +31,10 @@ rustc --version
 cargo --version
 ```
 
+The backend uses `nightly-2026-02-09`, selected automatically by
+`server/rust-toolchain.toml`. Install it with
+`rustup toolchain install nightly-2026-02-09` if needed.
+
 **System Dependencies:**
 ```bash
 # Ubuntu/Debian
@@ -62,11 +66,11 @@ git clone https://github.com/asi-alliance/asi-chain-faucet.git
 cd asi-chain-faucet/server
 ```
 
-The backend pins [F1R3FLY-io/rust-client](https://github.com/F1R3FLY-io/rust-client/pull/86)
-at `e8620a46572dbc2ec53c81f4389f5abf5c02f0b0`, a 0.3.0 candidate with typed admission and queue refusals.
+The backend uses [F1R3FLY-io/rust-client PR #86](https://github.com/F1R3FLY-io/rust-client/pull/86)
+as a Cargo git dependency pinned to `e8620a46572dbc2ec53c81f4389f5abf5c02f0b0`.
 Cargo fetches it automatically; `Cargo.lock` records the exact Git source.
 Node protocol dependencies remain at `0ccc315d84b32d668e8db49cd56ba3c576693e15`.
-Phlo prices are positive uint256 values encoded as 32-byte protobuf values.
+Phlo prices are positive uint256 values and are encoded as 32-byte protobuf values.
 
 2. **Create configuration file:**
 
@@ -96,8 +100,9 @@ Create a `.env` file with development-specific settings:
 
 ```bash
 # Development Configuration
-FAUCET_AMOUNT=10000000000000
-FAUCET_MAX_BALANCE=5000000000000
+FAUCET_TOKEN_DECIMALS=18  # Must match the development chain
+FAUCET_AMOUNT=10000      # ASI tokens
+FAUCET_MAX_BALANCE=20000 # ASI tokens
 PRIVATE_KEY=<dev_private_key>
 
 # Local or testnet nodes
@@ -181,10 +186,7 @@ curl -X POST http://localhost:40470/transfer \
 src/
 ├── main.rs              # Entry point, logging setup
 ├── config.rs            # Configuration loading and validation
-├── utils.rs             # Node selection, validation
-├── crypto.rs            # Key handling, vault address generation
-├── vault.rs             # Vault transfer Rholang templates
-├── http_client.rs       # Direct HTTP client for node API
+├── utils.rs             # Token conversion alias, node selection, validation
 │
 ├── core/                # Application core
 │   ├── mod.rs
@@ -205,8 +207,15 @@ src/
 │
 └── services/            # Business logic
     ├── mod.rs
+    ├── alerts.rs        # Mattermost notifications
+    ├── claims.rs        # Durable per-recipient reservations
     └── node_cli.rs      # Blockchain interaction service
 ```
+
+The faucet's `utils::tokens_to_units` is a local alias for
+`node_cli::vault::tokens_to_dust`. The Rust-client API keeps its original name.
+Reservations are persisted before submission and reconciled on a later claim;
+the backend does not poll them in the background.
 
 ### Adding New Endpoints
 

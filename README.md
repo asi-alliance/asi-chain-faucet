@@ -47,12 +47,12 @@ The ASI Chain Faucet consists of two main components working together to provide
 ## Key Features
 
 - **Token Distribution** - Send a configured amount of test ASI tokens to valid testnet addresses
-- **Balance Validation** - Automatically checks recipient balance before transfer to prevent exceeding the faucet limit
+- **Balance Validation** - Requires the recipient's pre-claim balance to be strictly below the eligibility ceiling
 - **Transaction Tracking** - Monitor the status of token transfers using deploy IDs
 - **Address Validation** - Validates ASI address format before processing requests
-- **Multi-Node Support** - Load balances requests across multiple validator nodes for reliability
+- **Multi-Node Support** - Selects a reachable validator for submission; balance and finalization queries use the observer
 - **CORS Enabled** - Full CORS support for cross-origin requests from the web interface
-- **Critical Error Alerts** - Optional Mattermost notifications when no validator node is reachable or a transfer deploy fails, with per-event-type throttling
+- **Critical Error Alerts** - Optional Mattermost notifications for unreachable validators, submission errors and deploy failures, with per-event-type throttling
 
 ---
 
@@ -71,11 +71,15 @@ The ASI Chain Faucet consists of two main components working together to provide
 
 ### Running the Backend
 
-The backend pins [F1R3FLY-io/rust-client](https://github.com/F1R3FLY-io/rust-client/pull/86)
-at `e8620a46572dbc2ec53c81f4389f5abf5c02f0b0`, a 0.3.0 candidate with typed admission and queue refusals.
+The backend uses [F1R3FLY-io/rust-client PR #86](https://github.com/F1R3FLY-io/rust-client/pull/86)
+as a Cargo git dependency pinned to `e8620a46572dbc2ec53c81f4389f5abf5c02f0b0`.
 Cargo fetches it automatically; `Cargo.lock` records the exact Git source.
 Node protocol dependencies remain at `0ccc315d84b32d668e8db49cd56ba3c576693e15`.
-Phlo prices are positive uint256 values encoded as 32-byte protobuf values.
+Phlo prices are positive uint256 values and are encoded as 32-byte protobuf values.
+
+This revision supplies the exact-integer API decoding and phlo-price signing
+required by the target node. Integration into the client's `dev` branch and a
+subsequent revision update require a separate compatibility check.
 
 ```bash
 # Clone the repository
@@ -93,6 +97,24 @@ cargo run --release
 ```
 
 Server starts on `http://0.0.0.0:40470` by default (from .env.example).
+
+### Upgrading an existing backend
+
+Before restarting, explicitly set `FAUCET_AMOUNT=10000` and
+`FAUCET_MAX_BALANCE=20000` in the existing deployment configuration. Both now
+use ASI tokens. The old atomic `FAUCET_AMOUNT=1000000000000` would request
+one trillion ASI; the old example ceiling `2000000000000` also means whole
+ASI. The default `FAUCET_TOKEN_DECIMALS` has changed from 8 to 18: explicitly
+set it to the actual chain precision, even if the deployment previously set
+only `FAUCET_AMOUNT`. Review all three settings together. Startup logs show
+the effective amount and ceiling in ASI and atomic units.
+
+The observer must serve `/api/balance/{address}` and
+`/api/deploy-finalization-status/{id}`. Missing finalization support is reported
+as an error when querying deploy status. Preserve `FAUCET_CLAIMS_DIR` and
+`FAUCET_NETWORK_ID` across upgrades. Follow the
+[reservation recovery procedure](server/CONFIGURATION.md#inspecting-and-recovering-a-stuck-reservation)
+before changing any journal files.
 
 ### Running the Frontend
 
@@ -115,6 +137,20 @@ npm run dev
 
 Frontend available at `http://localhost:5173`.
 
+### Running the Frontend in Docker
+
+The image builds with `VITE_BASE_URL=/api`, which takes precedence over a value
+in `web/.env`. Nginx forwards `/api/` to `http://host.docker.internal:40470/`.
+Run the backend with `SERVER_HOST=0.0.0.0` and `SERVER_PORT=40470` for this
+configuration. The web Compose service sets
+`extra_hosts: ["host.docker.internal:host-gateway"]` so the container can reach
+the host on Linux.
+
+From the `web/` directory, run `docker compose up --build -d`; the frontend is
+then available at `http://localhost:3000`. `nginx.conf.template` is copied as a
+static config, without environment substitution. Changing the proxy's backend
+host or port requires editing that file and rebuilding the image.
+
 ---
 
 ## Project Structure
@@ -126,9 +162,6 @@ asi-chain-faucet/
 │   │   ├── api/               # API layer (handlers, models, router)
 │   │   ├── core/              # Application core
 │   │   ├── services/          # Business logic (blockchain interaction)
-│   │   ├── crypto.rs          # Cryptographic operations (keys, vault addresses)
-│   │   ├── vault.rs           # Vault transfer Rholang templates
-│   │   ├── http_client.rs     # Direct HTTP client for node API
 │   │   ├── config.rs          # Configuration management
 │   │   └── main.rs            # Application entry point
 │   ├── Cargo.toml             # Rust dependencies
@@ -218,15 +251,15 @@ asi-chain-faucet/
 - Rust - Repository-pinned nightly toolchain
 - Axum 0.8 - Modern async web framework
 - Tokio 1.0 - Asynchronous runtime
-- Tower-HTTP 0.5 - HTTP middleware
+- Tower-HTTP 0.7 - HTTP middleware
 - secp256k1 + blake2 - Cryptographic signing
 - f1r3fly-models - Protobuf types for deploy signing
 
 **Frontend:**
-- React 19.1 - UI framework
-- TypeScript 5.7 - Type-safe JavaScript
-- Vite 6.2 - Fast build tool
-- Redux Toolkit 2.6 - State management
+- React 19.3 - UI framework
+- TypeScript 5.9 - Type-safe JavaScript
+- Vite 6.4 - Fast build tool
+- Redux Toolkit 2.14 - State management
 
 **Infrastructure:**
 - Docker - Containerization
@@ -243,7 +276,7 @@ See [server/Cargo.toml](server/Cargo.toml) and [web/package.json](web/package.js
 **[server/README.md](server/README.md)** - Backend overview, quick start, architecture, and navigation
 
 **[server/API.md](server/API.md)** - Complete API reference
-- All endpoints (POST /transfer, GET /balance, GET /deploy)
+- All endpoints (GET /config, POST /transfer, GET /balance, GET /deploy)
 - Request/response formats
 - Error codes and handling
 - CORS configuration
@@ -311,26 +344,3 @@ This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE) fi
 ---
 
 ASI Alliance founding members: Fetch.ai, SingularityNET, and CUDOS
-
-## Draft node admission compatibility
-
-This change pins the tested client candidate `e8620a46572dbc2ec53c81f4389f5abf5c02f0b0`
-for bounded admission and deploy queues.
-[Client PR #86](https://github.com/F1R3FLY-io/rust-client/pull/86) · [Node #789](https://github.com/F1R3FLY-io/f1r3node-rust/pull/789) · [Node #990](https://github.com/F1R3FLY-io/f1r3node-rust/pull/990)
-
-Transfers are prepared and signed once before submission, and every failure
-after signing returns the original `deploy_id`:
-
-- `deploy_pool_busy`, `deploy_admission_busy` and `invalid_deploy_window`
-  return HTTP 503 with that exact code. Queue capacity and availability
-  refusals also return 503 with their typed codes. A later request may succeed.
-- `deploy_too_large` and `deploy_expired` return HTTP 502 with that exact code;
-  the node refused the faucet's own deploy and an alert is raised.
-- Lost or malformed RPC responses return HTTP 502 `deploy_submission_unknown`;
-  check that ID before requesting a new transfer.
-
-The service does not retry or re-sign automatically. The UI displays these
-details and starts status polling only after acceptance. Balance reads retain
-exploratory-capacity retries; finalization and execution details use the
-observer HTTP port. A queue status of `Rejected` is a terminal deploy error.
-Live compatibility with bounded admission and a deploy queue remains pending.

@@ -30,11 +30,11 @@ For complete project documentation, see the [main README](../README.md) in the r
    cargo fetch --locked
    ```
 
-   The backend pins [F1R3FLY-io/rust-client](https://github.com/F1R3FLY-io/rust-client/pull/86)
-   at `e8620a46572dbc2ec53c81f4389f5abf5c02f0b0`, a 0.3.0 candidate with typed admission and queue refusals.
+   The backend uses [F1R3FLY-io/rust-client PR #86](https://github.com/F1R3FLY-io/rust-client/pull/86)
+   as a Cargo git dependency pinned to `e8620a46572dbc2ec53c81f4389f5abf5c02f0b0`.
    Cargo fetches it automatically; `Cargo.lock` records the exact Git source.
    Node protocol dependencies remain at `0ccc315d84b32d668e8db49cd56ba3c576693e15`.
-   Phlo prices are positive uint256 values encoded as 32-byte protobuf values.
+   Phlo prices are positive uint256 values and are encoded as 32-byte protobuf values.
 
 2. **Configure environment:**
 
@@ -51,6 +51,24 @@ For complete project documentation, see the [main README](../README.md) in the r
 
 The server starts on `http://0.0.0.0:40470` by default (from .env.example).
 
+### Upgrading an existing installation
+
+Set `FAUCET_AMOUNT=10000` and `FAUCET_MAX_BALANCE=20000` explicitly in the
+deployment configuration. Both use ASI tokens: the former atomic example
+`FAUCET_AMOUNT=1000000000000` now means one trillion ASI, and the old ceiling
+example `2000000000000` also means whole ASI. Explicitly set
+`FAUCET_TOKEN_DECIMALS` to the chain's actual precision; its default changed
+from 8 to 18, affecting deployments that set only `FAUCET_AMOUNT` as well.
+Review all three values together and check the effective ASI and atomic
+amounts in startup logs.
+
+The observer must serve `/api/balance/{address}` and
+`/api/deploy-finalization-status/{id}`. Missing finalization support is reported
+as an error when querying deploy status. Keep
+`FAUCET_CLAIMS_DIR` and `FAUCET_NETWORK_ID` stable across upgrades. See
+[inspection and recovery](CONFIGURATION.md#inspecting-and-recovering-a-stuck-reservation)
+for claims that remain pending.
+
 ---
 
 ## Architecture
@@ -62,9 +80,6 @@ src/
 ├── main.rs              # Entry point, logging setup
 ├── config.rs            # Configuration management
 ├── utils.rs             # Node selection, validation
-├── crypto.rs            # Key handling, vault address generation
-├── vault.rs             # Vault transfer Rholang templates
-├── http_client.rs       # Direct HTTP client for node API
 │
 ├── core/                # Application core
 │   ├── mod.rs
@@ -83,6 +98,8 @@ src/
 │
 └── services/            # Business logic
     ├── mod.rs
+    ├── alerts.rs        # Mattermost notifications
+    ├── claims.rs        # Durable per-recipient reservations
     └── node_cli.rs      # Blockchain interaction service
 ```
 
@@ -99,12 +116,13 @@ src/
 - Multiple nodes for load balancing
 - Random selection per request
 - Configured via NODE_HOSTS, NODE_GRPC_PORTS, NODE_HTTP_PORTS
-- Deploy submission via `POST /api/deploy` (HTTP)
+- Signed deploy submission via gRPC `do_deploy`
 
 **Read-Only Observer Node** (read operations):
 - Balance queries and status checks
 - Default HTTP port: 40453
-- Configured via OBSERVER_HOST, OBSERVER_HTTP_PORT
+- Configured via OBSERVER_HOST, OBSERVER_GRPC_PORT, OBSERVER_HTTP_PORT
+- Initial balances via gRPC exploratory queries; finalized balance reconciliation via HTTP `/api/balance/{address}`
 - Deploy status via `GET /api/deploy-finalization-status/{id}` (HTTP)
 
 ---
@@ -120,6 +138,7 @@ src/
 ### Quick Reference
 
 **API Endpoints:**
+- `GET /config` - Public precision, atomic amounts and eligibility policy
 - `POST /transfer` - Send tokens to address
 - `GET /balance/:address` - Query address balance
 - `GET /deploy/:deploy_id` - Check transaction status
@@ -138,9 +157,9 @@ MATTERMOST_WEBHOOK_URL=        # required when ALERTS_ENABLED=true
 ALERT_ENVIRONMENT=unknown      # environment label shown in alerts
 ```
 
-**Critical error alerts:** with `ALERTS_ENABLED=true`, the server posts to a Mattermost incoming webhook when no validator node is reachable or a transfer deploy fails. Nothing else is alerted. See [CONFIGURATION.md](CONFIGURATION.md#critical-error-alerts) for the full variable list and webhook setup.
+**Critical error alerts:** with `ALERTS_ENABLED=true`, the server posts to a Mattermost incoming webhook when no validator node is reachable or a transfer or deploy fails. See [CONFIGURATION.md](CONFIGURATION.md#critical-error-alerts) for the full variable list and webhook setup.
 
-**Important:** The backend uses 10^8 as the token decimal conversion factor (hardcoded). Frontend should use `VITE_TOKEN_DECIMALS=8` to match.
+**Token precision:** Set `FAUCET_TOKEN_DECIMALS` to the chain's actual precision (default 18). The frontend reads precision and exact atomic limits from the backend's `/config` endpoint.
 
 **Development:**
 ```bash
