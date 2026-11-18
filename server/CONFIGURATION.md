@@ -32,15 +32,16 @@ Balance reads retain the system-vault exploratory query and the configured
 `EXPLORATORY_RETRY_BUDGET_SEC` for observer capacity refusals.
 
 The backend uses [asi-alliance/asi-chain-client, branch `rust-dev`](https://github.com/asi-alliance/asi-chain-client/tree/rust-dev)
-as a Cargo git dependency pinned to `5d1c9b4d12e33ec8b64a74a28df196ef03478e73`.
+as a Cargo git dependency pinned to `9292f5433b4d727d9a226f2f5766dfd088e14948`.
 Cargo fetches it automatically; `Cargo.lock` records the exact Git source.
 Node protocol dependencies remain at `0ccc315d84b32d668e8db49cd56ba3c576693e15`.
-Phlo prices must fit positive `i64` and are encoded as uint256 protobuf values.
+Phlo prices are positive uint256 values and are encoded as 32-byte protobuf values.
 The validator and observer must support the uint256 monetary wire protocol.
 The ASI system-vault transfer ABI and exact balance query remain in use.
 HTTP integer and Phlo price responses accept string and legacy numeric encodings.
-Balances and transfer amounts remain exact uint256 values. A minimum Phlo price
-outside the client i64 range fails before signing.
+Balances, transfer amounts and the validator's minimum Phlo price retain
+uint256 precision. The client rejects a zero price or a maximum charge
+that exceeds uint256 before signing.
 Build with the committed `nightly-2026-02-09` toolchain and `Cargo.lock`.
 
 The backend reads environment variables and a `.env` file at startup. Monetary
@@ -526,8 +527,8 @@ FAUCET_MAX_BALANCE=100
 
 This distributes `10.000000000000000001` ASI to an address whose observed
 pre-claim balance is below 100 ASI. Transfer amounts and ceilings are bounded
-by uint256. Fee prices must fit positive `i64` in the pinned client and use
-exactly 32 big-endian bytes at protobuf field 15 in signed deploys.
+by uint256. Fee prices use exactly 32 big-endian bytes at protobuf field 15
+in signed deploys.
 
 ---
 

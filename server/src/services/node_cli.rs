@@ -158,11 +158,7 @@ impl NodeCliService {
         );
         let mut options =
             DeployOptions::default().with_phlo_limit(u64::try_from(self.config.deploy_phlo_limit)?);
-        // rust-dev accepts an i64 price and encodes it as 32 bytes for signing.
-        options.phlo_price = status
-            .min_phlo_price
-            .try_into()
-            .context("Node minimum Phlo price exceeds the client i64 range")?;
+        options.phlo_price = status.min_phlo_price;
         let signed = api
             .api()
             .prepare(&rholang, &options)

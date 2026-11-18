@@ -31,10 +31,10 @@ For complete project documentation, see the [main README](../README.md) in the r
    ```
 
    The backend uses [asi-alliance/asi-chain-client, branch `rust-dev`](https://github.com/asi-alliance/asi-chain-client/tree/rust-dev)
-   as a Cargo git dependency pinned to `5d1c9b4d12e33ec8b64a74a28df196ef03478e73`.
+   as a Cargo git dependency pinned to `9292f5433b4d727d9a226f2f5766dfd088e14948`.
    Cargo fetches it automatically; `Cargo.lock` records the exact Git source.
    Node protocol dependencies remain at `0ccc315d84b32d668e8db49cd56ba3c576693e15`.
-   Phlo prices must fit positive `i64` and are encoded as uint256 protobuf values.
+   Phlo prices are positive uint256 values and are encoded as 32-byte protobuf values.
 
 2. **Configure environment:**
 
