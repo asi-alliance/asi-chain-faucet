@@ -30,11 +30,11 @@ For complete project documentation, see the [main README](../README.md) in the r
    cargo fetch --locked
    ```
 
-   The backend uses [asi-alliance/asi-chain-client, branch `rust-dev`](https://github.com/asi-alliance/asi-chain-client/tree/rust-dev)
-   as a Cargo git dependency pinned to `5d1c9b4d12e33ec8b64a74a28df196ef03478e73`.
+   The backend pins [F1R3FLY-io/rust-client](https://github.com/F1R3FLY-io/rust-client/pull/86)
+   at `e8620a46572dbc2ec53c81f4389f5abf5c02f0b0`, a 0.3.0 candidate with typed admission and queue refusals.
    Cargo fetches it automatically; `Cargo.lock` records the exact Git source.
    Node protocol dependencies remain at `0ccc315d84b32d668e8db49cd56ba3c576693e15`.
-   Phlo prices must fit positive `i64` and are encoded as uint256 protobuf values.
+   Phlo prices are positive uint256 values encoded as 32-byte protobuf values.
 
 2. **Configure environment:**
 

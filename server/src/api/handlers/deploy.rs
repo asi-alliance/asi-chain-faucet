@@ -30,6 +30,15 @@ fn to_status_response(info: &DeployInfo) -> DeployStatusResponse {
         "Finalized" => ("Finalized", None),
         "Failed" => ("DeployError", Some("Deploy execution failed".to_string())),
         "Expired" => ("DeployError", Some("Deploy expired".to_string())),
+        "Rejected" => (
+            "DeployError",
+            Some(
+                info.finalization
+                    .detail
+                    .clone()
+                    .unwrap_or_else(|| "Deploy rejected".into()),
+            ),
+        ),
         "Pending" => ("Deploying", None),
         other => ("Unknown", Some(format!("Unknown deploy state: {other}"))),
     };
@@ -88,6 +97,8 @@ mod tests {
                 state: state.to_string(),
                 rejection_count: 0,
                 latest_block_hash: None,
+                queue_state: None,
+                detail: None,
             },
             system_deploy_error: None,
             errored: false,
@@ -110,6 +121,7 @@ mod tests {
         for (state, reason) in [
             ("Failed", "Deploy execution failed"),
             ("Expired", "Deploy expired"),
+            ("Rejected", "Deploy rejected"),
         ] {
             let response = to_status_response(&deploy_info(state));
             assert_eq!(
@@ -117,6 +129,16 @@ mod tests {
                 json!({"status": "DeployError", "msg": reason})
             );
         }
+    }
+
+    #[test]
+    fn queue_rejection_preserves_the_reason() {
+        let mut info = deploy_info("Rejected");
+        info.finalization.detail = Some("Term failed validation".into());
+        assert_eq!(
+            serde_json::to_value(to_status_response(&info)).unwrap(),
+            json!({"status": "DeployError", "msg": "Term failed validation"})
+        );
     }
 
     #[test]

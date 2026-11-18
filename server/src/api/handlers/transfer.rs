@@ -105,8 +105,8 @@ pub async fn transfer_handler(
 /// Map a submission failure to an HTTP answer that keeps the node's exact code
 /// and the signed deploy ID:
 ///
-/// - retryable admission refusals (`deploy_pool_busy`, `deploy_admission_busy`,
-///   `invalid_deploy_window`): 503, a later request can succeed;
+/// - temporary admission, queue capacity or availability refusals: 503,
+///   a later request can succeed;
 /// - final admission refusals of the faucet's own deploy (`deploy_too_large`,
 ///   `deploy_expired`): 502, the requester cannot fix them;
 /// - untyped node rejections: 400 `deploy_rejected`;
@@ -114,7 +114,7 @@ pub async fn transfer_handler(
 fn transfer_error_response(error: &anyhow::Error) -> (StatusCode, Json<ErrorResponse>) {
     let (status, code, deploy_id) = match error.downcast_ref::<TransferSubmissionError>() {
         Some(failure @ TransferSubmissionError::Admission { reason, .. }) => (
-            if reason.is_retryable() {
+            if failure.is_retryable_refusal() {
                 StatusCode::SERVICE_UNAVAILABLE
             } else {
                 StatusCode::BAD_GATEWAY
@@ -171,6 +171,22 @@ mod tests {
             ),
             (DeployAdmissionReason::TooLarge, StatusCode::BAD_GATEWAY),
             (DeployAdmissionReason::Expired, StatusCode::BAD_GATEWAY),
+            (
+                DeployAdmissionReason::QueueFull,
+                StatusCode::SERVICE_UNAVAILABLE,
+            ),
+            (
+                DeployAdmissionReason::DeployerShareFull,
+                StatusCode::SERVICE_UNAVAILABLE,
+            ),
+            (
+                DeployAdmissionReason::QueueNodeUnavailable,
+                StatusCode::SERVICE_UNAVAILABLE,
+            ),
+            (
+                DeployAdmissionReason::QueueStopped,
+                StatusCode::SERVICE_UNAVAILABLE,
+            ),
         ] {
             let (actual, Json(body)) = transfer_error_response(&admission(reason));
             assert_eq!(actual, status, "{reason}");

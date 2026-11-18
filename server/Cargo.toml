@@ -33,9 +33,9 @@ uuid = { version = "1.29.2", features = ["v4"] }
 rand = "0.9.5"
 reqwest = { version = "0.12.28", features = ["json", "rustls-tls"], default-features = false }
 
-# Client with typed deploy admission refusals (F1R3FLY-io/rust-client#86, on
-# top of rust-dev 5d1c9b4). Repin to a merged commit before this leaves draft.
-node_cli = { git = "https://github.com/F1R3FLY-io/rust-client.git", rev = "aa6f275d1e60ad5d92ae52beda8455615f7e6179", default-features = false }
+# Tested client 0.3.0 candidate for typed admission and queue refusals
+# (F1R3FLY-io/rust-client#86).
+node_cli = { git = "https://github.com/F1R3FLY-io/rust-client.git", rev = "e8620a46572dbc2ec53c81f4389f5abf5c02f0b0", default-features = false }
 
 [dev-dependencies]
 proptest = "1.12.0"
