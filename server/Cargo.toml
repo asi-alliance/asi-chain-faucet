@@ -34,7 +34,9 @@ rand = "0.9.5"
 reqwest = { version = "0.12.28", features = ["json", "rustls-tls"], default-features = false }
 
 # ASI Chain client library, pinned to a rust-dev commit
-node_cli = { git = "https://github.com/asi-alliance/asi-chain-client.git", rev = "5d1c9b4d12e33ec8b64a74a28df196ef03478e73", default-features = false }
+node_cli = { git = "https://github.com/asi-alliance/asi-chain-client.git", rev = "9292f5433b4d727d9a226f2f5766dfd088e14948", default-features = false }
 
 [dev-dependencies]
 proptest = "1.12.0"
+axum = { version = "0.8.9", features = ["http2"] }
+tonic = { version = "0.14.9", default-features = false }

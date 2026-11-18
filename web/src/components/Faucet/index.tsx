@@ -2,7 +2,7 @@ import AddressBalance from "@components/AddressBalance";
 import LoaderWithLabel from "@components/LoaderWithLabel";
 import { useFaucetTransactions } from "@context/FaucetTransactionsContext";
 import { faucetTokens, getBalance, getMonetaryConfig } from "@api/index";
-import { formatAtomic, isEligible } from "@utils/amounts";
+import { formatDisplayAtomic, isEligible } from "@utils/amounts";
 import ValidationMessagesList, {
     TValidationMessage,
 } from "@components/ValidationMessagesList";
@@ -25,6 +25,8 @@ export interface IFaucetProps {
 
 const Faucet = ({ address }: IFaucetProps): ReactElement => {
     const [errorsList, setErrorsList] = useState<TValidationMessage[]>([]);
+    const [faucetAmount, setFaucetAmount] = useState<string | null>(null);
+    const [eligibilityCeiling, setEligibilityCeiling] = useState<string | null>(null);
     const [addressBalance, setAddressBalance] = useState<string | null>(null);
     const [isAddressBalanceFetching, setIsAddressBalanceFetching] =
         useState<boolean>(false);
@@ -63,16 +65,18 @@ const Faucet = ({ address }: IFaucetProps): ReactElement => {
                 );
             }
 
-            const formattedBalance = formatAtomic(balance, config.decimals);
+            const formattedBalance = formatDisplayAtomic(balance, config.decimals);
 
             setAddressBalance(formattedBalance);
+            setEligibilityCeiling(formatDisplayAtomic(config.ceiling.toString(), config.decimals));
+            setFaucetAmount(formatDisplayAtomic(config.amount.toString(), config.decimals));
 
             if (isEligible(balance, config.ceiling)) {
                 setFaucetPhase(FaucetPhases.READY_TO_CLAIM);
                 setErrorsList([]);
             } else {
                 setFaucetPhase(FaucetPhases.ELIGIBILITY_TEST);
-                setErrorsList(["Your address is not eligible"]);
+                setErrorsList([`Your balance must be below ${formatDisplayAtomic(config.ceiling.toString(), config.decimals)} ASI to claim tokens.`]);
             }
         } catch (error) {
             if (requestId !== requestIdRef.current) {
@@ -156,6 +160,10 @@ const Faucet = ({ address }: IFaucetProps): ReactElement => {
                         </div>
 
                         <div className="faucet-initiator">
+                            {eligibilityCeiling !== null && (
+                                <p>Receive {faucetAmount} ASI when your balance is below {eligibilityCeiling} ASI.
+                                    One claim at a time; retries resume a pending claim.</p>
+                            )}
                             <button
                                 onClick={faucet}
                                 disabled={
