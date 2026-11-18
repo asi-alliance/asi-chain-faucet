@@ -748,6 +748,10 @@ filesystem with file locking, atomic rename and fsync support. Compose mounts
 `/data/claims` on the `faucet-claims` named volume. Preserve this directory when
 replacing a container or migrating the service. Do not run replicas with
 independent journals; processes on the same host must share the same directory.
+On opening the store, the namespace directory and every ancestor are fsynced
+bottom-up, including the working directory for a relative root. This persists
+all directory entries created for a new or nested journal root before serving
+claims. A directory-sync failure prevents the store from opening.
 
 `FAUCET_NETWORK_ID` defaults to `default` and namespaces reservations. Set a
 stable unique ID for each chain, and keep it unchanged when rotating observer
@@ -759,8 +763,30 @@ deploy, its ID and distribution amount are atomically journaled and fsynced
 before submission. Concurrent requests return 409 while that lock is held.
 Pending retries return the existing ID and may resubmit the **same signed
 bytes**. An uncertain submission still returns that ID for status polling;
-it never opens another claim. Restart and cancellation retain the journal. The prepared validator endpoint is
-stored with the signed bytes, so retries use the same submission node.
+it never opens another claim. Restart and cancellation retain the journal.
+The prepared validator endpoint is stored with the signed bytes and remains
+the preferred submission target. If submission returns any error, the service
+tries the current `NODE_HOSTS`, `NODE_GRPC_PORTS` and `NODE_HTTP_PORTS` inventory
+in order. A failed or incompatible replacement does not stop the search.
+Update that inventory and restart the faucet when retiring a validator;
+pending claims can then use a replacement without deleting their reservations.
+
+Before sending to a replacement, `/api/status` must explicitly report a ready,
+writable validator with the same `networkId`, `shardId`, `version.api` and
+`nativeTokenDecimals` recorded during preparation. The node software version
+may differ. Older journals without that identity snapshot use the configured
+observer's `/api/status` as the trusted chain/protocol identity and require
+the default `root` shard used by the old signing path. If that status cannot
+be verified, recovery fails closed. Keep the observer on the original chain
+when rotating validators. `FAUCET_NETWORK_ID` is a local journal namespace,
+not a substitute for the node's network ID.
+
+Every submission sends the original signed deploy with the original ID;
+amount, fees and validity fields are never regenerated. A replacement still
+applies its admission rules, including its minimum Phlo price. A submission
+error, including a gRPC error or node rejection, is not treated as a canonical
+terminal verdict. If no replacement accepts the deploy, the existing
+reservation remains intact.
 
 Reservations are reconciled on the next claim. Only node-reported `Failed`,
 `Expired` or `Finalized` permit a new eligibility check; elapsed wall time,
@@ -817,7 +843,8 @@ deploy cannot execute.
    Files live at `FAUCET_CLAIMS_DIR/<hex-encoded FAUCET_NETWORK_ID>/<address>.json`.
    Inspect `deploy_id` and `amount` (atomic units). `signed` holds
    the serialized prepared transfer, including the original validator endpoint
-   and exact signed deploy bytes. Keep journal backups access-restricted and
+   and exact signed deploy bytes, plus a chain/protocol identity snapshot in
+   newly prepared transfers. Keep journal backups access-restricted and
    avoid pasting `signed` into logs or tickets.
 2. Query the configured observer's
    `/api/deploy-finalization-status/<deploy_id>` and `/api/deploy/<deploy_id>`.
@@ -825,8 +852,11 @@ deploy cannot execute.
    any execution or vault-transfer errors. A 404 on finalization status means
    the observer is unsupported; HTTP 200 `Pending` also covers unknown deploys
    and does not prove a transfer was never sent.
-3. Restore the validator or observer as needed. Retry `/transfer` for the same
-   recipient to resubmit the same signed bytes. For `Failed` or `Expired`, the
+3. Restore the observer as needed. Restore the original validator, or configure
+   compatible replacements in the validator arrays and restart the faucet.
+   Retry `/transfer` for the same recipient to resubmit the same signed bytes.
+   Older journal recovery also requires the observer's `/api/status` endpoint.
+   For `Failed` or `Expired`, the
    next claim automatically checks eligibility again. For `Finalized`, the
    next claim verifies the inclusion block and current finalized balance at
    or beyond that height. Normal recovery requires no journal deletion.

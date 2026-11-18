@@ -18,12 +18,63 @@ pub struct NodeCliService {
     alerts: Arc<AlertService>,
 }
 
-// Keep the submission endpoint with the signed bytes so the validator checked
-// for denomination and fee price during preparation is also the submission node.
+// Prefer the validator used during preparation. Keep its chain/protocol identity
+// as well, so a retired endpoint can be replaced without signing a new deploy.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct PreparedTransfer {
     signed: Vec<u8>,
     endpoint: String,
+    #[serde(default)]
+    compatibility: Option<TransferCompatibility>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct TransferCompatibility {
+    network_id: String,
+    shard_id: String,
+    api_version: String,
+    native_token_decimals: u32,
+}
+
+impl TransferCompatibility {
+    fn from_status(status: &NodeStatus) -> Result<Self> {
+        anyhow::ensure!(
+            !status.network_id.is_empty() && !status.shard_id.is_empty(),
+            "Missing node network or shard identity"
+        );
+        Ok(Self {
+            network_id: status.network_id.clone(),
+            shard_id: status.shard_id.clone(),
+            api_version: status
+                .version
+                .get("api")
+                .and_then(|value| value.as_str())
+                .filter(|value| !value.is_empty())
+                .context("Missing node API version")?
+                .into(),
+            native_token_decimals: status
+                .native_token_decimals
+                .context("Missing native token decimals")?,
+        })
+    }
+
+    fn validate_replacement(&self, status: &NodeStatus) -> Result<()> {
+        let actual = Self::from_status(status)?;
+        anyhow::ensure!(
+            actual.network_id == self.network_id
+                && actual.shard_id == self.shard_id
+                && actual.api_version == self.api_version
+                && actual.native_token_decimals == self.native_token_decimals,
+            "Replacement validator has incompatible network, shard, API version or token decimals"
+        );
+        anyhow::ensure!(
+            status.is_ready == Some(true)
+                && status.is_validator == Some(true)
+                && status.is_read_only == Some(false),
+            "Replacement validator is not ready for submissions"
+        );
+        Ok(())
+    }
 }
 
 /// Deploy status enriched with the node's `/api/deploy/{id}` detail so callers
@@ -89,6 +140,11 @@ impl NodeCliService {
             decimals == self.config.native_token_decimals,
             "Configured decimals do not match node runtime"
         );
+        let compatibility = TransferCompatibility::from_status(&status)?;
+        anyhow::ensure!(
+            compatibility.shard_id == node_cli::deploy::DEFAULT_SHARD_ID,
+            "Validator shard does not match the signed deploy shard"
+        );
         let mut options =
             DeployOptions::default().with_phlo_limit(u64::try_from(self.config.deploy_phlo_limit)?);
         // rust-dev accepts an i64 price and encodes it as 32 bytes for signing.
@@ -104,7 +160,72 @@ impl NodeCliService {
         Ok(serde_json::to_vec(&PreparedTransfer {
             signed: signed.to_bytes(),
             endpoint: format!("http://{}:{}", node.host, node.grpc_port),
+            compatibility: Some(compatibility),
         })?)
+    }
+
+    async fn submit_prepared(
+        &self,
+        prepared: &PreparedTransfer,
+        deploy: &node_cli::SignedDeploy,
+    ) -> Result<()> {
+        let api = F1r3flyApi::new(Endpoint::parse(&prepared.endpoint)?)?;
+        let original_error = match api.submit(deploy).await {
+            Ok(_) => return Ok(()),
+            Err(error) => error,
+        };
+        // A submission error can be specific to this node. Other compatible
+        // validators may accept the same deploy, even after an uncertain reply.
+        let legacy_identity;
+        let compatibility = match &prepared.compatibility {
+            Some(compatibility) => compatibility,
+            None => {
+                // Older journals predate the identity snapshot. Their deploys
+                // were signed for the default shard; the configured observer,
+                // already trusted for reconciliation, supplies the chain identity.
+                let status: NodeStatus =
+                    serde_json::from_value(self.observer()?.get_json("/api/status").await?)
+                        .context("Invalid observer status for legacy claim recovery")?;
+                legacy_identity = TransferCompatibility::from_status(&status)?;
+                anyhow::ensure!(
+                    legacy_identity.shard_id == node_cli::deploy::DEFAULT_SHARD_ID,
+                    "Observer shard does not match the legacy signed deploy shard"
+                );
+                &legacy_identity
+            }
+        };
+        warn!(endpoint = %prepared.endpoint, %original_error,
+            deploy_id = %deploy.id(), "Submission to original validator failed; trying configured replacements");
+        for node in &self.config.node_sockets {
+            let endpoint = format!("http://{}:{}", node.host, node.grpc_port);
+            if endpoint == prepared.endpoint {
+                continue;
+            }
+            let attempt = async {
+                let status: NodeStatus = serde_json::from_value(
+                    NodeHttp::new(Endpoint::parse(&format!(
+                        "http://{}:{}",
+                        node.host, node.http_port
+                    ))?)?
+                    .get_json("/api/status")
+                    .await?,
+                )
+                .context("Invalid replacement validator status")?;
+                compatibility.validate_replacement(&status)?;
+                F1r3flyApi::new(Endpoint::parse(&endpoint)?)?
+                    .submit(deploy)
+                    .await?;
+                Ok::<(), anyhow::Error>(())
+            }
+            .await;
+            match attempt {
+                Ok(()) => return Ok(()),
+                Err(error) => warn!(%endpoint, %error, deploy_id = %deploy.id(),
+                    "Replacement validator could not accept the saved deploy"),
+            }
+        }
+        Err(anyhow::Error::from(original_error)
+            .context("No compatible validator accepted the saved deploy"))
     }
 
     pub async fn get_balance(&self, address: &str) -> Result<String> {
@@ -299,13 +420,14 @@ impl crate::services::claims::ClaimNode for NodeCliService {
     async fn submit(&self, signed: &[u8]) -> Result<()> {
         let prepared: PreparedTransfer = serde_json::from_slice(signed)?;
         let deploy = node_cli::SignedDeploy::from_bytes(&prepared.signed)?;
-        let api = F1r3flyApi::new(Endpoint::parse(&prepared.endpoint)?)?;
-        api.submit(&deploy).await.inspect_err(|error| {
-            self.alerts.notify(
-                AlertEvent::new(AlertKind::TransferDeployFailed, error.to_string())
-                    .with_context("deploy_id", deploy.id()),
-            );
-        })?;
+        self.submit_prepared(&prepared, &deploy)
+            .await
+            .inspect_err(|error| {
+                self.alerts.notify(
+                    AlertEvent::new(AlertKind::TransferDeployFailed, error.to_string())
+                        .with_context("deploy_id", deploy.id()),
+                );
+            })?;
         Ok(())
     }
     async fn status(&self, id: &str) -> Result<crate::services::claims::ClaimStatus> {
@@ -345,8 +467,340 @@ mod claim_tests {
     };
     use std::{
         collections::HashMap,
-        sync::atomic::{AtomicI64, Ordering},
+        sync::{
+            atomic::{AtomicI64, Ordering},
+            Mutex,
+        },
     };
+
+    fn validator_status() -> serde_json::Value {
+        serde_json::json!({
+            "version": {"api": "1.0", "node": "test"}, "address": "test",
+            "networkId": "test-chain", "shardId": "root", "peers": 1, "nodes": 2,
+            "minPhloPrice": "1", "nativeTokenDecimals": 18,
+            "isReady": true, "isValidator": true, "isReadOnly": false
+        })
+    }
+
+    fn prepared_transfer(endpoint: String) -> PreparedTransfer {
+        let key = SigningKey::from_hex(&"01".repeat(32)).unwrap();
+        let deploy = node_cli::UnsignedDeploy::new(
+            "Nil",
+            &DeployOptions::default(),
+            10,
+            node_cli::deploy::DEFAULT_SHARD_ID,
+        )
+        .unwrap()
+        .sign(key.secret_key());
+        PreparedTransfer {
+            signed: deploy.to_bytes(),
+            endpoint,
+            compatibility: Some(
+                TransferCompatibility::from_status(
+                    &serde_json::from_value(validator_status()).unwrap(),
+                )
+                .unwrap(),
+            ),
+        }
+    }
+
+    struct TestValidator {
+        socket: crate::utils::NodeSocket,
+        submitted: Arc<Mutex<Vec<Vec<u8>>>>,
+        server: tokio::task::JoinHandle<()>,
+    }
+
+    fn protobuf_bytes(field: u8, bytes: &[u8]) -> Vec<u8> {
+        let mut message = vec![(field << 3) | 2];
+        let mut length = bytes.len();
+        while length >= 128 {
+            message.push((length as u8) | 0x80);
+            length >>= 7;
+        }
+        message.push(length as u8);
+        message.extend_from_slice(bytes);
+        message
+    }
+
+    impl TestValidator {
+        async fn start(status: serde_json::Value, answer: Result<String, tonic::Code>) -> Self {
+            // DeployResponse.result is protobuf field 2 (a string).
+            Self::start_with_response(status, answer.map(|id| protobuf_bytes(2, id.as_bytes())))
+                .await
+        }
+
+        async fn start_with_response(
+            status: serde_json::Value,
+            answer: Result<Vec<u8>, tonic::Code>,
+        ) -> Self {
+            let submitted = Arc::new(Mutex::new(Vec::new()));
+            let requests = submitted.clone();
+            let app = Router::new()
+                .route(
+                    "/api/status",
+                    get(move || {
+                        let status = status.clone();
+                        async move { Json(status) }
+                    }),
+                )
+                .route(
+                    "/casper.v1.DeployService/doDeploy",
+                    post(move |body: axum::body::Bytes| {
+                        let requests = requests.clone();
+                        let answer = answer.clone();
+                        async move {
+                            // Capture the actual uncompressed protobuf received over gRPC.
+                            assert_eq!(body[0], 0);
+                            assert_eq!(
+                                u32::from_be_bytes(body[1..5].try_into().unwrap()) as usize,
+                                body.len() - 5
+                            );
+                            requests.lock().unwrap().push(body[5..].to_vec());
+                            match answer {
+                                Ok(message) => {
+                                    let mut frame = vec![0];
+                                    frame.extend_from_slice(&(message.len() as u32).to_be_bytes());
+                                    frame.extend(message);
+                                    axum::http::Response::builder()
+                                        .header("content-type", "application/grpc")
+                                        .header("grpc-status", "0")
+                                        .body(axum::body::Body::from(frame))
+                                        .unwrap()
+                                }
+                                Err(code) => {
+                                    tonic::Status::new(code, "test validator response").into_http()
+                                }
+                            }
+                        }
+                    }),
+                );
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+            Self {
+                socket: crate::utils::NodeSocket {
+                    host: "127.0.0.1".into(),
+                    grpc_port: port,
+                    http_port: port,
+                },
+                submitted,
+                server,
+            }
+        }
+
+        fn endpoint(&self) -> String {
+            format!("http://127.0.0.1:{}", self.socket.grpc_port)
+        }
+    }
+
+    impl Drop for TestValidator {
+        fn drop(&mut self) {
+            self.server.abort();
+        }
+    }
+
+    fn submission_service(nodes: &[&TestValidator]) -> NodeCliService {
+        let mut config = AppConfig::from_env().unwrap();
+        config.node_sockets = nodes.iter().map(|node| node.socket.clone()).collect();
+        config.alerts_enabled = false;
+        NodeCliService::new(config.clone(), AlertService::new(&config))
+    }
+
+    #[tokio::test]
+    async fn original_validator_is_preferred_without_observer_or_replacement_checks() {
+        let mut prepared = prepared_transfer(String::new());
+        let id = node_cli::SignedDeploy::from_bytes(&prepared.signed)
+            .unwrap()
+            .id();
+        let original = TestValidator::start(serde_json::Value::Null, Ok(id)).await;
+        let replacement =
+            TestValidator::start(validator_status(), Err(tonic::Code::Unavailable)).await;
+        prepared.endpoint = original.endpoint();
+        prepared.compatibility = None;
+        let node = submission_service(&[&replacement]);
+        ClaimNode::submit(&node, &serde_json::to_vec(&prepared).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(*original.submitted.lock().unwrap(), vec![prepared.signed]);
+        assert!(replacement.submitted.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn grpc_errors_resubmit_identical_bytes_and_id_to_compatible_replacement() {
+        for code in [
+            tonic::Code::Unavailable,
+            tonic::Code::DeadlineExceeded,
+            tonic::Code::Internal,
+            tonic::Code::ResourceExhausted,
+            tonic::Code::Unimplemented,
+            tonic::Code::Unknown,
+            tonic::Code::InvalidArgument,
+        ] {
+            let mut prepared = prepared_transfer(String::new());
+            let id = node_cli::SignedDeploy::from_bytes(&prepared.signed)
+                .unwrap()
+                .id();
+            let original = TestValidator::start(validator_status(), Err(code)).await;
+            let replacement = TestValidator::start(validator_status(), Ok(id.clone())).await;
+            prepared.endpoint = original.endpoint();
+            let node = submission_service(&[&original, &replacement]);
+            let saved = serde_json::to_vec(&prepared).unwrap();
+            ClaimNode::submit(&node, &saved).await.unwrap();
+            assert_eq!(ClaimNode::deploy_id(&node, &saved).unwrap(), id);
+            for validator in [&original, &replacement] {
+                assert_eq!(
+                    *validator.submitted.lock().unwrap(),
+                    vec![prepared.signed.clone()],
+                    "{code:?}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn node_rejections_and_invalid_replies_try_compatible_replacement() {
+        // DeployResponse.error is field 1; ServiceError.messages is also field 1.
+        let rejection = protobuf_bytes(1, &protobuf_bytes(1, b"Phlo price below node minimum"));
+        for response in [
+            rejection,
+            protobuf_bytes(2, b"unexpected deploy ID"),
+            Vec::new(),
+        ] {
+            let original =
+                TestValidator::start_with_response(validator_status(), Ok(response)).await;
+            let prepared = prepared_transfer(original.endpoint());
+            let id = node_cli::SignedDeploy::from_bytes(&prepared.signed)
+                .unwrap()
+                .id();
+            let replacement = TestValidator::start(validator_status(), Ok(id.clone())).await;
+            let node = submission_service(&[&replacement]);
+            let saved = serde_json::to_vec(&prepared).unwrap();
+            ClaimNode::submit(&node, &saved).await.unwrap();
+            assert_eq!(ClaimNode::deploy_id(&node, &saved).unwrap(), id);
+            for validator in [&original, &replacement] {
+                assert_eq!(
+                    *validator.submitted.lock().unwrap(),
+                    vec![prepared.signed.clone()]
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn retired_endpoint_in_legacy_journal_uses_observer_identity_for_replacement() {
+        let retired = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mut prepared = prepared_transfer(format!("http://{}", retired.local_addr().unwrap()));
+        let id = node_cli::SignedDeploy::from_bytes(&prepared.signed)
+            .unwrap()
+            .id();
+        let replacement = TestValidator::start(validator_status(), Ok(id)).await;
+        let mut node = submission_service(&[&replacement]);
+        node.config.observer_host = "127.0.0.1".into();
+        node.config.observer_http_port = replacement.socket.http_port;
+        // The previous journal format contains only these two fields.
+        let saved = serde_json::to_vec(&serde_json::json!({
+            "signed": prepared.signed, "endpoint": prepared.endpoint
+        }))
+        .unwrap();
+        drop(retired);
+        ClaimNode::submit(&node, &saved).await.unwrap();
+        assert_eq!(
+            *replacement.submitted.lock().unwrap(),
+            vec![std::mem::take(&mut prepared.signed)]
+        );
+    }
+
+    #[tokio::test]
+    async fn legacy_recovery_without_verified_observer_identity_never_submits_to_replacements() {
+        let original =
+            TestValidator::start(serde_json::Value::Null, Err(tonic::Code::Unavailable)).await;
+        let replacement = TestValidator::start(validator_status(), Ok("unused".into())).await;
+        let mut prepared = prepared_transfer(original.endpoint());
+        prepared.compatibility = None;
+        let mut node = submission_service(&[&replacement]);
+        node.config.observer_host = original.socket.host.clone();
+        node.config.observer_http_port = original.socket.http_port;
+        let saved = serde_json::to_vec(&prepared).unwrap();
+        let error = ClaimNode::submit(&node, &saved).await.unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("Invalid observer status for legacy claim recovery"));
+        assert_eq!(*original.submitted.lock().unwrap(), vec![prepared.signed]);
+        assert!(replacement.submitted.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn incompatible_or_unready_replacements_never_receive_the_saved_deploy() {
+        let original =
+            TestValidator::start(validator_status(), Err(tonic::Code::Unavailable)).await;
+        let prepared = prepared_transfer(original.endpoint());
+        let saved = serde_json::to_vec(&prepared).unwrap();
+        for (field, value) in [
+            ("networkId", serde_json::json!("another-chain")),
+            ("shardId", serde_json::json!("another-shard")),
+            ("version", serde_json::json!({"api": "2.0", "node": "test"})),
+            ("nativeTokenDecimals", serde_json::json!(8)),
+            ("isReady", serde_json::json!(false)),
+            ("isValidator", serde_json::json!(false)),
+            ("isReadOnly", serde_json::json!(true)),
+            ("isReady", serde_json::Value::Null),
+            ("nativeTokenDecimals", serde_json::Value::Null),
+        ] {
+            let mut status = validator_status();
+            status[field] = value;
+            let replacement = TestValidator::start(status, Ok("unused".into())).await;
+            let node = submission_service(&[&replacement]);
+            assert!(ClaimNode::submit(&node, &saved).await.is_err(), "{field}");
+            assert!(replacement.submitted.lock().unwrap().is_empty(), "{field}");
+        }
+    }
+
+    #[tokio::test]
+    async fn replacement_search_continues_after_metadata_and_submission_errors() {
+        let original =
+            TestValidator::start(validator_status(), Err(tonic::Code::Unavailable)).await;
+        let prepared = prepared_transfer(original.endpoint());
+        let id = node_cli::SignedDeploy::from_bytes(&prepared.signed)
+            .unwrap()
+            .id();
+        let invalid = TestValidator::start(serde_json::Value::Null, Ok("unused".into())).await;
+        let overloaded =
+            TestValidator::start(validator_status(), Err(tonic::Code::ResourceExhausted)).await;
+        let replacement = TestValidator::start(validator_status(), Ok(id)).await;
+        let node = submission_service(&[&invalid, &overloaded, &replacement]);
+        ClaimNode::submit(&node, &serde_json::to_vec(&prepared).unwrap())
+            .await
+            .unwrap();
+        assert!(invalid.submitted.lock().unwrap().is_empty());
+        assert_eq!(
+            *overloaded.submitted.lock().unwrap(),
+            vec![prepared.signed.clone()]
+        );
+        assert_eq!(
+            *replacement.submitted.lock().unwrap(),
+            vec![prepared.signed]
+        );
+    }
+
+    #[tokio::test]
+    async fn all_failed_submissions_return_an_error_and_keep_the_original_deploy() {
+        let original =
+            TestValidator::start(validator_status(), Err(tonic::Code::InvalidArgument)).await;
+        let replacement =
+            TestValidator::start(validator_status(), Err(tonic::Code::Internal)).await;
+        let prepared = prepared_transfer(original.endpoint());
+        let node = submission_service(&[&replacement]);
+        let saved = serde_json::to_vec(&prepared).unwrap();
+        let id = ClaimNode::deploy_id(&node, &saved).unwrap();
+        assert!(ClaimNode::submit(&node, &saved).await.is_err());
+        assert_eq!(ClaimNode::deploy_id(&node, &saved).unwrap(), id);
+        for validator in [&original, &replacement] {
+            assert_eq!(
+                *validator.submitted.lock().unwrap(),
+                vec![prepared.signed.clone()]
+            );
+        }
+    }
 
     #[test]
     fn finalized_deploy_with_rejected_transfer_is_an_error() {

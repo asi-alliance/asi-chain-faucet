@@ -54,7 +54,6 @@ impl ClaimStore {
             !network.is_empty() && network.len() <= 64,
             "FAUCET_NETWORK_ID must contain 1..64 bytes"
         );
-        fs::create_dir_all(root)?;
         let namespace: String = network
             .as_bytes()
             .iter()
@@ -62,9 +61,20 @@ impl ClaimStore {
             .collect();
         let directory = root.join(namespace);
         fs::create_dir_all(&directory)?;
-        File::open(root)?.sync_all()?;
-        if let Some(parent) = root.parent().filter(|p| !p.as_os_str().is_empty()) {
-            File::open(parent)?.sync_all()?;
+        // Sync bottom-up through every ancestor: create_dir_all may have created
+        // several levels, and syncing a directory does not persist its own entry
+        // in its parent. A relative path's empty final ancestor means the cwd.
+        // Include existing ancestors too, so concurrent openers cannot skip an
+        // entry that another process has created but not yet made durable.
+        for ancestor in directory.ancestors() {
+            let ancestor = if ancestor.as_os_str().is_empty() {
+                Path::new(".")
+            } else {
+                ancestor
+            };
+            File::open(ancestor)?.sync_all().with_context(|| {
+                format!("Unable to persist claim directory {}", ancestor.display())
+            })?;
         }
         Ok(Self { directory })
     }
@@ -251,6 +261,19 @@ mod tests {
         BigUint::from(10u32)
     }
 
+    #[test]
+    fn opens_relative_and_nested_journal_roots() {
+        let directory = Directory(PathBuf::from(format!(
+            ".faucet-claims-test-{}",
+            uuid::Uuid::new_v4()
+        )));
+        let store = directory.store("network");
+        assert!(store.directory.is_dir());
+        let nested = ClaimStore::open(&directory.0.join("new/parents/claims"), "network").unwrap();
+        assert!(nested.directory.is_dir());
+        assert_eq!(directory.store("network").directory, store.directory);
+    }
+
     #[tokio::test]
     async fn concurrent_requests_and_pending_retries_never_sign_twice() {
         let directory = Directory::new();
@@ -307,10 +330,12 @@ mod tests {
                 .unwrap(),
             "deploy1"
         );
-        let saved: Reservation =
-            serde_json::from_slice(&fs::read(reopened.directory.join("recipient.json")).unwrap())
-                .unwrap();
+        let journal_path = reopened.directory.join("recipient.json");
+        let saved_bytes = fs::read(&journal_path).unwrap();
+        let saved: Reservation = serde_json::from_slice(&saved_bytes).unwrap();
         assert_eq!(saved.amount, "10000000000000000001");
+        assert_eq!(saved.deploy_id, "deploy1");
+        assert_eq!(saved.signed, vec![1]);
         assert_eq!(node.prepared.load(Ordering::SeqCst), 1);
         node.unavailable.store(true, Ordering::SeqCst);
         assert!(reopened
@@ -325,6 +350,9 @@ mod tests {
                 .unwrap(),
             "deploy1"
         );
+        assert_eq!(fs::read(journal_path).unwrap(), saved_bytes);
+        assert_eq!(node.prepared.load(Ordering::SeqCst), 1);
+        assert_eq!(*node.sent.lock().unwrap(), vec![vec![1]; 3]);
     }
 
     #[tokio::test]

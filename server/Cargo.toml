@@ -38,3 +38,5 @@ node_cli = { git = "https://github.com/asi-alliance/asi-chain-client.git", rev =
 
 [dev-dependencies]
 proptest = "1.12.0"
+axum = { version = "0.8.9", features = ["http2"] }
+tonic = { version = "0.14.9", default-features = false }
