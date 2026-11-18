@@ -2,7 +2,11 @@ services:
   asi-chain-faucet:
     build:
       context: .
+      args:
+        VITE_BASE_URL: /api
     container_name: asi-chain-faucet
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "3000:80"
     restart: unless-stopped

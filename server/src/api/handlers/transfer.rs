@@ -1,144 +1,92 @@
 use crate::{
-    api::handlers::balance_handler,
-    api::models::{ApiResult, BalanceResponse, ErrorResponse, TransferRequest, TransferResponse},
-    services::node_cli::{NodeCliService, TransferSubmissionError},
+    api::models::{ApiResult, ErrorResponse, TransferRequest, TransferResponse},
+    services::{
+        claims::ClaimError,
+        node_cli::{temporary_admission_refusal, NodeCliService},
+    },
     AppState,
 };
 use axum::{extract::State, http::StatusCode, response::Json, Json as RequestJson};
 use node_cli::vault::validate_address;
-use tracing::{error, info, warn};
-
-async fn ensure_recipient_balance_below_limit(
-    state: &AppState,
-    address: &str,
-) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
-    let balance_json = balance_handler(
-        State(state.clone()),
-        axum::extract::Path(address.to_string()),
-    )
-    .await?;
-
-    let Json(BalanceResponse { balance }) = balance_json;
-
-    let eligible =
-        crate::config::is_eligible(&balance, &state.config.faucet_max_balance).map_err(|_| {
-            warn!(
-                "FAUCET: Unable to parse balance '{}' for address {}",
-                balance, address
-            );
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse::validation_error(
-                    "FAUCET: Unable to parse existing balance for address",
-                )),
-            )
-        })?;
-
-    if !eligible {
-        warn!(
-            "FAUCET: Address {} balance {} exceeds faucet limit {}",
-            address, balance, state.config.faucet_max_balance
-        );
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::validation_error(
-                "Address balance exceeds faucet eligibility threshold",
-            )),
-        ));
-    }
-
-    Ok(())
-}
 
 #[axum::debug_handler]
 pub async fn transfer_handler(
     State(state): State<AppState>,
     RequestJson(request): RequestJson<TransferRequest>,
 ) -> ApiResult<TransferResponse> {
-    info!(
-        "FAUCET: Transfer request received for address: {}",
-        request.to_address
-    );
-
-    validate_address(&request.to_address).map_err(|e| {
+    validate_address(&request.to_address).map_err(|error| {
         (
             StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::validation_error(&e.to_string())),
+            Json(ErrorResponse::validation_error(&error.to_string())),
         )
     })?;
-
-    ensure_recipient_balance_below_limit(&state, &request.to_address).await?;
-
-    let private_key = state
-        .config
-        .private_key
-        .as_ref()
-        .expect("PRIVATE_KEY presence is validated at startup")
-        .expose()
-        .to_string();
-
-    let node_cli_service = NodeCliService::new(state.config.clone(), state.alerts.clone());
-    match node_cli_service
-        .transfer_funds(&request.to_address, &private_key)
+    let node = NodeCliService::new(state.config.clone(), state.alerts.clone());
+    let deploy_id = state
+        .claims
+        .claim(
+            &node,
+            &request.to_address,
+            &state.config.faucet_amount,
+            &state.config.faucet_max_balance,
+        )
         .await
-    {
-        Ok(deploy_id) => {
-            info!(
-                "FAUCET: Transfer to {} deployed with id {}",
-                &request.to_address, deploy_id
-            );
-
-            Ok(Json(TransferResponse {
-                deploy_id: Some(deploy_id),
-            }))
-        }
-        Err(e) => {
-            error!(
-                "FAUCET: Transfer failed to {} with error {}",
-                request.to_address, e
-            );
-            Err(transfer_error_response(&e))
-        }
-    }
+        .map_err(claim_error_response)?;
+    Ok(Json(TransferResponse {
+        deploy_id: Some(deploy_id),
+    }))
 }
 
-/// Map a submission failure to an HTTP answer that keeps the node's exact code
-/// and the signed deploy ID:
-///
-/// - temporary admission, queue capacity or availability refusals: 503,
-///   a later request can succeed;
-/// - final admission refusals of the faucet's own deploy (`deploy_too_large`,
-///   `deploy_expired`): 502, the requester cannot fix them;
-/// - untyped node rejections: 400 `deploy_rejected`;
-/// - lost or malformed responses: 502 `deploy_submission_unknown`.
-fn transfer_error_response(error: &anyhow::Error) -> (StatusCode, Json<ErrorResponse>) {
-    let (status, code, deploy_id) = match error.downcast_ref::<TransferSubmissionError>() {
-        Some(failure @ TransferSubmissionError::Admission { reason, .. }) => (
-            if failure.is_retryable_refusal() {
-                StatusCode::SERVICE_UNAVAILABLE
-            } else {
-                StatusCode::BAD_GATEWAY
-            },
-            reason.code(),
-            Some(failure.deploy_id().to_string()),
+fn claim_error_response(error: ClaimError) -> (StatusCode, Json<ErrorResponse>) {
+    let (status, message) = match error {
+        ClaimError::Busy => (
+            StatusCode::CONFLICT,
+            "A claim for this address is being processed. Retry shortly.",
         ),
-        Some(failure @ TransferSubmissionError::Unknown { .. }) => (
-            StatusCode::BAD_GATEWAY,
-            "deploy_submission_unknown",
-            Some(failure.deploy_id().to_string()),
-        ),
-        Some(failure @ TransferSubmissionError::Rejected { .. }) => (
+        ClaimError::Ineligible => (
             StatusCode::BAD_REQUEST,
-            "deploy_rejected",
-            Some(failure.deploy_id().to_string()),
+            "Address balance must be strictly below the pre-claim eligibility threshold.",
         ),
-        None => (StatusCode::BAD_GATEWAY, "FAUCET: Transfer failed", None),
+        ClaimError::Unavailable(error) => {
+            tracing::error!(%error, "Claim could not be reconciled or persisted");
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Claim unavailable. Any existing reservation is retained; retry later.",
+            )
+        }
+        ClaimError::Submission { deploy_id, error } => {
+            let (status, code, details) = match error.downcast_ref::<node_cli::Error>() {
+                Some(node_cli::Error::DeployAdmissionRefused {
+                    reason, message, ..
+                }) => (
+                    if temporary_admission_refusal(*reason) {
+                        StatusCode::SERVICE_UNAVAILABLE
+                    } else {
+                        StatusCode::BAD_GATEWAY
+                    },
+                    reason.code(),
+                    message.clone(),
+                ),
+                Some(node_cli::Error::NodeRejected { message, .. })
+                    if !message.trim().is_empty() =>
+                {
+                    (StatusCode::BAD_REQUEST, "deploy_rejected", message.clone())
+                }
+                _ => (
+                    StatusCode::BAD_GATEWAY,
+                    "deploy_submission_unknown",
+                    "Submission could not be confirmed. The saved claim remains reserved.".into(),
+                ),
+            };
+            return (
+                status,
+                Json(ErrorResponse::new(code.into(), Some(details)).with_deploy_id(deploy_id)),
+            );
+        }
     };
-    let mut body = ErrorResponse::new(code.to_string(), Some(error.to_string()));
-    if let Some(id) = deploy_id {
-        body = body.with_deploy_id(id);
-    }
-    (status, Json(body))
+    (
+        status,
+        Json(ErrorResponse::new(message.into(), Some(message.into()))),
+    )
 }
 
 #[cfg(test)]
@@ -146,17 +94,9 @@ mod tests {
     use super::*;
     use node_cli::DeployAdmissionReason;
 
-    fn admission(reason: DeployAdmissionReason) -> anyhow::Error {
-        anyhow::Error::new(TransferSubmissionError::Admission {
-            deploy_id: "original-id".into(),
-            reason,
-            message: format!("{}: not accepted", reason.code()),
-        })
-    }
-
     #[test]
-    fn admission_refusals_retain_the_exact_code_and_id() {
-        for (reason, status) in [
+    fn refusals_report_the_reason_and_original_id() {
+        for (reason, expected) in [
             (
                 DeployAdmissionReason::PoolBusy,
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -188,27 +128,31 @@ mod tests {
                 StatusCode::SERVICE_UNAVAILABLE,
             ),
         ] {
-            let (actual, Json(body)) = transfer_error_response(&admission(reason));
-            assert_eq!(actual, status, "{reason}");
+            let (actual, Json(body)) = claim_error_response(ClaimError::Submission {
+                deploy_id: "original-id".into(),
+                error: node_cli::Error::DeployAdmissionRefused {
+                    deploy_id: "original-id".into(),
+                    reason,
+                    message: "Declined".into(),
+                    retry_after: None,
+                    congestion: None,
+                }
+                .into(),
+            });
+            assert_eq!(actual, expected, "{reason}");
             assert_eq!(body.error, reason.code());
             assert_eq!(body.deploy_id.as_deref(), Some("original-id"));
-            assert!(body.details.unwrap().contains("not accepted"));
         }
     }
 
     #[test]
-    fn unknown_results_are_never_presented_as_admission_refusals() {
-        let error = anyhow::Error::new(TransferSubmissionError::Unknown {
+    fn unknown_submission_returns_the_original_id() {
+        let (status, Json(body)) = claim_error_response(ClaimError::Submission {
             deploy_id: "original-id".into(),
-            cause: node_cli::Error::Decode {
-                what: "deploy response",
-                detail: "missing".into(),
-            },
+            error: anyhow::anyhow!("Transport error"),
         });
-        let (status, Json(body)) = transfer_error_response(&error);
         assert_eq!(status, StatusCode::BAD_GATEWAY);
         assert_eq!(body.error, "deploy_submission_unknown");
         assert_eq!(body.deploy_id.as_deref(), Some("original-id"));
-        assert!(body.details.unwrap().contains("outcome unknown"));
     }
 }

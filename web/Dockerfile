@@ -7,6 +7,9 @@ RUN npm ci
 
 COPY . .
 
+ARG VITE_BASE_URL=/api
+ENV VITE_BASE_URL=${VITE_BASE_URL}
+
 RUN npm run build
 
 # ---------- Runtime stage ----------
