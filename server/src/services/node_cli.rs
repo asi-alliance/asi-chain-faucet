@@ -58,23 +58,42 @@ impl TransferCompatibility {
         })
     }
 
-    fn validate_replacement(&self, status: &NodeStatus) -> Result<()> {
+    fn validate_validator(&self, status: &NodeStatus) -> Result<()> {
         let actual = Self::from_status(status)?;
         anyhow::ensure!(
             actual.network_id == self.network_id
                 && actual.shard_id == self.shard_id
                 && actual.api_version == self.api_version
                 && actual.native_token_decimals == self.native_token_decimals,
-            "Replacement validator has incompatible network, shard, API version or token decimals"
+            "Validator has incompatible network, shard, API version or token decimals"
         );
         anyhow::ensure!(
             status.is_ready == Some(true)
                 && status.is_validator == Some(true)
                 && status.is_read_only == Some(false),
-            "Replacement validator is not ready for submissions"
+            "Validator is not ready for submissions"
         );
         Ok(())
     }
+}
+
+async fn read_node_status(host: &str, http_port: u16) -> Result<NodeStatus> {
+    let endpoint = Endpoint::parse(&format!("http://{host}:{http_port}"))?;
+    // A redirect could supply a different node's identity.
+    let response = reqwest::Client::builder()
+        .connect_timeout(endpoint.connect_timeout())
+        .timeout(endpoint.request_timeout())
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?
+        .get(format!("{endpoint}/api/status"))
+        .send()
+        .await?;
+    anyhow::ensure!(
+        response.status().is_success(),
+        "Node status at {endpoint} returned HTTP {}",
+        response.status()
+    );
+    response.json().await.context("Invalid node status")
 }
 
 /// Deploy status enriched with the node's `/api/deploy/{id}` detail so callers
@@ -124,15 +143,7 @@ impl NodeCliService {
         ))?;
         let rholang =
             build_transfer_rholang(&api.get_address()?, to_address, &self.config.faucet_amount)?;
-        let status: NodeStatus = serde_json::from_value(
-            NodeHttp::new(Endpoint::parse(&format!(
-                "http://{}:{}",
-                node.host, node.http_port
-            ))?)?
-            .get_json("/api/status")
-            .await?,
-        )
-        .context("Invalid node status")?;
+        let status = read_node_status(&node.host, node.http_port).await?;
         let decimals = status
             .native_token_decimals
             .context("Missing native token decimals")?;
@@ -169,13 +180,6 @@ impl NodeCliService {
         prepared: &PreparedTransfer,
         deploy: &node_cli::SignedDeploy,
     ) -> Result<()> {
-        let api = F1r3flyApi::new(Endpoint::parse(&prepared.endpoint)?)?;
-        let original_error = match api.submit(deploy).await {
-            Ok(_) => return Ok(()),
-            Err(error) => error,
-        };
-        // A submission error can be specific to this node. Other compatible
-        // validators may accept the same deploy, even after an uncertain reply.
         let legacy_identity;
         let compatibility = match &prepared.compatibility {
             Some(compatibility) => compatibility,
@@ -183,8 +187,9 @@ impl NodeCliService {
                 // Older journals predate the identity snapshot. Their deploys
                 // were signed for the default shard; the configured observer,
                 // already trusted for reconciliation, supplies the chain identity.
-                let status: NodeStatus =
-                    serde_json::from_value(self.observer()?.get_json("/api/status").await?)
+                let status =
+                    read_node_status(&self.config.observer_host, self.config.observer_http_port)
+                        .await
                         .context("Invalid observer status for legacy claim recovery")?;
                 legacy_identity = TransferCompatibility::from_status(&status)?;
                 anyhow::ensure!(
@@ -194,24 +199,30 @@ impl NodeCliService {
                 &legacy_identity
             }
         };
-        warn!(endpoint = %prepared.endpoint, %original_error,
-            deploy_id = %deploy.id(), "Submission to original validator failed; trying configured replacements");
-        for node in &self.config.node_sockets {
-            let endpoint = format!("http://{}:{}", node.host, node.grpc_port);
-            if endpoint == prepared.endpoint {
-                continue;
-            }
+        // The journal stores only a gRPC address. Its HTTP port must come from
+        // the current inventory, just like the ports for replacement validators.
+        let validators = self
+            .config
+            .node_sockets
+            .iter()
+            .map(|node| (format!("http://{}:{}", node.host, node.grpc_port), node));
+        let original: Option<(String, &crate::utils::NodeSocket)> = validators
+            .clone()
+            .find(|(endpoint, _)| endpoint == &prepared.endpoint);
+        let replacements = validators.filter(|(endpoint, _)| endpoint != &prepared.endpoint);
+        let mut first_error = None;
+        for (endpoint, node) in original.into_iter().chain(replacements) {
             let attempt = async {
-                let status: NodeStatus = serde_json::from_value(
-                    NodeHttp::new(Endpoint::parse(&format!(
-                        "http://{}:{}",
-                        node.host, node.http_port
-                    ))?)?
-                    .get_json("/api/status")
-                    .await?,
-                )
-                .context("Invalid replacement validator status")?;
-                compatibility.validate_replacement(&status)?;
+                anyhow::ensure!(
+                    !self.config.node_sockets.iter().any(|other| {
+                        other.host == node.host
+                            && other.grpc_port == node.grpc_port
+                            && other.http_port != node.http_port
+                    }),
+                    "Conflicting HTTP ports configured for {endpoint}"
+                );
+                let status = read_node_status(&node.host, node.http_port).await?;
+                compatibility.validate_validator(&status)?;
                 F1r3flyApi::new(Endpoint::parse(&endpoint)?)?
                     .submit(deploy)
                     .await?;
@@ -220,11 +231,15 @@ impl NodeCliService {
             .await;
             match attempt {
                 Ok(()) => return Ok(()),
-                Err(error) => warn!(%endpoint, %error, deploy_id = %deploy.id(),
-                    "Replacement validator could not accept the saved deploy"),
+                Err(error) => {
+                    warn!(%endpoint, %error, deploy_id = %deploy.id(),
+                        "Validator could not accept the saved deploy");
+                    first_error.get_or_insert(error);
+                }
             }
         }
-        Err(anyhow::Error::from(original_error)
+        Err(first_error
+            .unwrap_or_else(|| anyhow::anyhow!("No configured validators"))
             .context("No compatible validator accepted the saved deploy"))
     }
 
@@ -504,10 +519,25 @@ mod claim_tests {
         }
     }
 
+    fn legacy_transfer(prepared: &PreparedTransfer) -> Vec<u8> {
+        // The previous journal format contains only these two fields.
+        serde_json::to_vec(&serde_json::json!({
+            "signed": prepared.signed, "endpoint": prepared.endpoint
+        }))
+        .unwrap()
+    }
+
     struct TestValidator {
         socket: crate::utils::NodeSocket,
         submitted: Arc<Mutex<Vec<Vec<u8>>>>,
-        server: tokio::task::JoinHandle<()>,
+        servers: [tokio::task::JoinHandle<()>; 2],
+    }
+
+    async fn serve(app: Router) -> (u16, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (port, server)
     }
 
     fn protobuf_bytes(field: u8, bytes: &[u8]) -> Vec<u8> {
@@ -535,56 +565,54 @@ mod claim_tests {
         ) -> Self {
             let submitted = Arc::new(Mutex::new(Vec::new()));
             let requests = submitted.clone();
-            let app = Router::new()
-                .route(
-                    "/api/status",
-                    get(move || {
-                        let status = status.clone();
-                        async move { Json(status) }
-                    }),
-                )
-                .route(
-                    "/casper.v1.DeployService/doDeploy",
-                    post(move |body: axum::body::Bytes| {
-                        let requests = requests.clone();
-                        let answer = answer.clone();
-                        async move {
-                            // Capture the actual uncompressed protobuf received over gRPC.
-                            assert_eq!(body[0], 0);
-                            assert_eq!(
-                                u32::from_be_bytes(body[1..5].try_into().unwrap()) as usize,
-                                body.len() - 5
-                            );
-                            requests.lock().unwrap().push(body[5..].to_vec());
-                            match answer {
-                                Ok(message) => {
-                                    let mut frame = vec![0];
-                                    frame.extend_from_slice(&(message.len() as u32).to_be_bytes());
-                                    frame.extend(message);
-                                    axum::http::Response::builder()
-                                        .header("content-type", "application/grpc")
-                                        .header("grpc-status", "0")
-                                        .body(axum::body::Body::from(frame))
-                                        .unwrap()
-                                }
-                                Err(code) => {
-                                    tonic::Status::new(code, "test validator response").into_http()
-                                }
+            let http = Router::new().route(
+                "/api/status",
+                get(move || {
+                    let status = status.clone();
+                    async move { Json(status) }
+                }),
+            );
+            let grpc = Router::new().route(
+                "/casper.v1.DeployService/doDeploy",
+                post(move |body: axum::body::Bytes| {
+                    let requests = requests.clone();
+                    let answer = answer.clone();
+                    async move {
+                        // Capture the actual uncompressed protobuf received over gRPC.
+                        assert_eq!(body[0], 0);
+                        assert_eq!(
+                            u32::from_be_bytes(body[1..5].try_into().unwrap()) as usize,
+                            body.len() - 5
+                        );
+                        requests.lock().unwrap().push(body[5..].to_vec());
+                        match answer {
+                            Ok(message) => {
+                                let mut frame = vec![0];
+                                frame.extend_from_slice(&(message.len() as u32).to_be_bytes());
+                                frame.extend(message);
+                                axum::http::Response::builder()
+                                    .header("content-type", "application/grpc")
+                                    .header("grpc-status", "0")
+                                    .body(axum::body::Body::from(frame))
+                                    .unwrap()
+                            }
+                            Err(code) => {
+                                tonic::Status::new(code, "test validator response").into_http()
                             }
                         }
-                    }),
-                );
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let port = listener.local_addr().unwrap().port();
-            let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+                    }
+                }),
+            );
+            let (http_port, http_server) = serve(http).await;
+            let (grpc_port, grpc_server) = serve(grpc).await;
             Self {
                 socket: crate::utils::NodeSocket {
                     host: "127.0.0.1".into(),
-                    grpc_port: port,
-                    http_port: port,
+                    grpc_port,
+                    http_port,
                 },
                 submitted,
-                server,
+                servers: [http_server, grpc_server],
             }
         }
 
@@ -595,7 +623,9 @@ mod claim_tests {
 
     impl Drop for TestValidator {
         fn drop(&mut self) {
-            self.server.abort();
+            for server in &self.servers {
+                server.abort();
+            }
         }
     }
 
@@ -607,22 +637,49 @@ mod claim_tests {
     }
 
     #[tokio::test]
-    async fn original_validator_is_preferred_without_observer_or_replacement_checks() {
+    async fn matching_original_validator_is_preferred_over_configured_replacements() {
         let mut prepared = prepared_transfer(String::new());
         let id = node_cli::SignedDeploy::from_bytes(&prepared.signed)
             .unwrap()
             .id();
-        let original = TestValidator::start(serde_json::Value::Null, Ok(id)).await;
-        let replacement =
-            TestValidator::start(validator_status(), Err(tonic::Code::Unavailable)).await;
+        let original = TestValidator::start(validator_status(), Ok(id.clone())).await;
+        let replacement = TestValidator::start(validator_status(), Ok(id)).await;
         prepared.endpoint = original.endpoint();
-        prepared.compatibility = None;
-        let node = submission_service(&[&replacement]);
+        let node = submission_service(&[&replacement, &original]);
         ClaimNode::submit(&node, &serde_json::to_vec(&prepared).unwrap())
             .await
             .unwrap();
         assert_eq!(*original.submitted.lock().unwrap(), vec![prepared.signed]);
         assert!(replacement.submitted.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn original_on_another_network_fails_over_with_the_saved_bytes() {
+        let mut status = validator_status();
+        status["networkId"] = serde_json::json!("another-chain");
+        let mut prepared = prepared_transfer(String::new());
+        let id = node_cli::SignedDeploy::from_bytes(&prepared.signed)
+            .unwrap()
+            .id();
+        let original = TestValidator::start(status, Ok(id.clone())).await;
+        let replacement = TestValidator::start(validator_status(), Ok(id.clone())).await;
+        prepared.endpoint = original.endpoint();
+        let mut node = submission_service(&[&original, &replacement]);
+        node.config.observer_host = replacement.socket.host.clone();
+        node.config.observer_http_port = replacement.socket.http_port;
+
+        for saved in [
+            serde_json::to_vec(&prepared).unwrap(),
+            legacy_transfer(&prepared),
+        ] {
+            ClaimNode::submit(&node, &saved).await.unwrap();
+            assert_eq!(ClaimNode::deploy_id(&node, &saved).unwrap(), id);
+        }
+        assert!(original.submitted.lock().unwrap().is_empty());
+        assert_eq!(
+            *replacement.submitted.lock().unwrap(),
+            vec![prepared.signed.clone(), prepared.signed]
+        );
     }
 
     #[tokio::test]
@@ -673,7 +730,7 @@ mod claim_tests {
                 .unwrap()
                 .id();
             let replacement = TestValidator::start(validator_status(), Ok(id.clone())).await;
-            let node = submission_service(&[&replacement]);
+            let node = submission_service(&[&original, &replacement]);
             let saved = serde_json::to_vec(&prepared).unwrap();
             ClaimNode::submit(&node, &saved).await.unwrap();
             assert_eq!(ClaimNode::deploy_id(&node, &saved).unwrap(), id);
@@ -687,54 +744,47 @@ mod claim_tests {
     }
 
     #[tokio::test]
-    async fn retired_endpoint_in_legacy_journal_uses_observer_identity_for_replacement() {
-        let retired = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let mut prepared = prepared_transfer(format!("http://{}", retired.local_addr().unwrap()));
+    async fn unconfigured_legacy_endpoint_is_skipped_even_when_reachable() {
+        let mut prepared = prepared_transfer(String::new());
         let id = node_cli::SignedDeploy::from_bytes(&prepared.signed)
             .unwrap()
             .id();
+        let retired = TestValidator::start(validator_status(), Ok(id.clone())).await;
+        prepared.endpoint = retired.endpoint();
         let replacement = TestValidator::start(validator_status(), Ok(id)).await;
         let mut node = submission_service(&[&replacement]);
         node.config.observer_host = "127.0.0.1".into();
         node.config.observer_http_port = replacement.socket.http_port;
-        // The previous journal format contains only these two fields.
-        let saved = serde_json::to_vec(&serde_json::json!({
-            "signed": prepared.signed, "endpoint": prepared.endpoint
-        }))
-        .unwrap();
-        drop(retired);
-        ClaimNode::submit(&node, &saved).await.unwrap();
+        ClaimNode::submit(&node, &legacy_transfer(&prepared))
+            .await
+            .unwrap();
+        assert!(retired.submitted.lock().unwrap().is_empty());
         assert_eq!(
             *replacement.submitted.lock().unwrap(),
-            vec![std::mem::take(&mut prepared.signed)]
+            vec![prepared.signed]
         );
     }
 
     #[tokio::test]
-    async fn legacy_recovery_without_verified_observer_identity_never_submits_to_replacements() {
-        let original =
-            TestValidator::start(serde_json::Value::Null, Err(tonic::Code::Unavailable)).await;
+    async fn legacy_recovery_without_verified_observer_identity_never_submits() {
+        let observer = TestValidator::start(serde_json::Value::Null, Ok("unused".into())).await;
+        let original = TestValidator::start(validator_status(), Ok("unused".into())).await;
         let replacement = TestValidator::start(validator_status(), Ok("unused".into())).await;
-        let mut prepared = prepared_transfer(original.endpoint());
-        prepared.compatibility = None;
-        let mut node = submission_service(&[&replacement]);
-        node.config.observer_host = original.socket.host.clone();
-        node.config.observer_http_port = original.socket.http_port;
-        let saved = serde_json::to_vec(&prepared).unwrap();
+        let prepared = prepared_transfer(original.endpoint());
+        let mut node = submission_service(&[&original, &replacement]);
+        node.config.observer_host = observer.socket.host.clone();
+        node.config.observer_http_port = observer.socket.http_port;
+        let saved = legacy_transfer(&prepared);
         let error = ClaimNode::submit(&node, &saved).await.unwrap_err();
         assert!(error
             .to_string()
             .contains("Invalid observer status for legacy claim recovery"));
-        assert_eq!(*original.submitted.lock().unwrap(), vec![prepared.signed]);
+        assert!(original.submitted.lock().unwrap().is_empty());
         assert!(replacement.submitted.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
-    async fn incompatible_or_unready_replacements_never_receive_the_saved_deploy() {
-        let original =
-            TestValidator::start(validator_status(), Err(tonic::Code::Unavailable)).await;
-        let prepared = prepared_transfer(original.endpoint());
-        let saved = serde_json::to_vec(&prepared).unwrap();
+    async fn incompatible_or_unready_validators_never_receive_the_saved_deploy() {
         for (field, value) in [
             ("networkId", serde_json::json!("another-chain")),
             ("shardId", serde_json::json!("another-shard")),
@@ -748,17 +798,103 @@ mod claim_tests {
         ] {
             let mut status = validator_status();
             status[field] = value;
+            let original = TestValidator::start(status.clone(), Ok("unused".into())).await;
             let replacement = TestValidator::start(status, Ok("unused".into())).await;
-            let node = submission_service(&[&replacement]);
+            let node = submission_service(&[&original, &replacement]);
+            let saved = serde_json::to_vec(&prepared_transfer(original.endpoint())).unwrap();
             assert!(ClaimNode::submit(&node, &saved).await.is_err(), "{field}");
+            assert!(original.submitted.lock().unwrap().is_empty(), "{field}");
             assert!(replacement.submitted.lock().unwrap().is_empty(), "{field}");
         }
     }
 
     #[tokio::test]
+    async fn redirected_or_ambiguous_status_cannot_vouch_for_the_original_validator() {
+        let mut prepared = prepared_transfer(String::new());
+        let id = node_cli::SignedDeploy::from_bytes(&prepared.signed)
+            .unwrap()
+            .id();
+        let mut original = TestValidator::start(serde_json::Value::Null, Ok(id.clone())).await;
+        let replacement = TestValidator::start(validator_status(), Ok(id)).await;
+        prepared.endpoint = original.endpoint();
+        let saved = serde_json::to_vec(&prepared).unwrap();
+        let location = format!(
+            "http://127.0.0.1:{}/api/status",
+            replacement.socket.http_port
+        );
+        let (port, redirect) = serve(Router::new().route(
+            "/api/status",
+            get(move || {
+                let redirect = axum::response::Redirect::temporary(&location);
+                async move { redirect }
+            }),
+        ))
+        .await;
+        original.socket.http_port = port;
+        let mut node = submission_service(&[&original, &replacement]);
+        ClaimNode::submit(&node, &saved).await.unwrap();
+
+        let mut conflicting = original.socket.clone();
+        conflicting.http_port = replacement.socket.http_port;
+        node.config.node_sockets.insert(0, conflicting);
+        ClaimNode::submit(&node, &saved).await.unwrap();
+        assert!(original.submitted.lock().unwrap().is_empty());
+        assert_eq!(
+            *replacement.submitted.lock().unwrap(),
+            vec![prepared.signed.clone(), prepared.signed]
+        );
+        redirect.abort();
+    }
+
+    #[tokio::test]
+    async fn unverifiable_validators_leave_the_pending_reservation_intact() {
+        let mut prepared = prepared_transfer(String::new());
+        let id = node_cli::SignedDeploy::from_bytes(&prepared.signed)
+            .unwrap()
+            .id();
+        let original = TestValidator::start(serde_json::Value::Null, Ok(id.clone())).await;
+        let mut status = validator_status();
+        status["isReadOnly"] = serde_json::json!(true);
+        let replacement = TestValidator::start(status, Ok(id.clone())).await;
+        prepared.endpoint = original.endpoint();
+        let saved = serde_json::to_vec(&prepared).unwrap();
+        let mut node = submission_service(&[&original, &replacement]);
+        let (port, observer) = serve(Router::new().route(
+            "/api/deploy-finalization-status/{id}",
+            get(|| async { Json(serde_json::json!({"state": "Pending", "rejection_count": 0})) }),
+        ))
+        .await;
+        node.config.observer_host = "127.0.0.1".into();
+        node.config.observer_http_port = port;
+
+        let root = std::env::temp_dir().join(format!("faucet-claims-{}", uuid::Uuid::new_v4()));
+        let store = crate::services::claims::ClaimStore::open(&root, "A").unwrap();
+        let path = root.join("41/recipient.json"); // Hex-encoded network namespace "A".
+        let journal = serde_json::to_vec(&serde_json::json!({
+            "amount": "10", "deploy_id": id, "signed": saved
+        }))
+        .unwrap();
+        std::fs::write(&path, &journal).unwrap();
+
+        assert!(ClaimNode::submit(&node, &saved).await.is_err());
+        let amount = 10u32.into();
+        assert_eq!(
+            store
+                .claim(&node, "recipient", &amount, &amount)
+                .await
+                .unwrap(),
+            id
+        );
+        assert_eq!(std::fs::read(path).unwrap(), journal);
+        assert!(original.submitted.lock().unwrap().is_empty());
+        assert!(replacement.submitted.lock().unwrap().is_empty());
+        std::fs::remove_dir_all(root).unwrap();
+        observer.abort();
+    }
+
+    #[tokio::test]
     async fn replacement_search_continues_after_metadata_and_submission_errors() {
-        let original =
-            TestValidator::start(validator_status(), Err(tonic::Code::Unavailable)).await;
+        let original = TestValidator::start(serde_json::Value::Null, Ok("unused".into())).await;
         let prepared = prepared_transfer(original.endpoint());
         let id = node_cli::SignedDeploy::from_bytes(&prepared.signed)
             .unwrap()
@@ -767,10 +903,11 @@ mod claim_tests {
         let overloaded =
             TestValidator::start(validator_status(), Err(tonic::Code::ResourceExhausted)).await;
         let replacement = TestValidator::start(validator_status(), Ok(id)).await;
-        let node = submission_service(&[&invalid, &overloaded, &replacement]);
+        let node = submission_service(&[&original, &invalid, &overloaded, &replacement]);
         ClaimNode::submit(&node, &serde_json::to_vec(&prepared).unwrap())
             .await
             .unwrap();
+        assert!(original.submitted.lock().unwrap().is_empty());
         assert!(invalid.submitted.lock().unwrap().is_empty());
         assert_eq!(
             *overloaded.submitted.lock().unwrap(),
@@ -789,7 +926,7 @@ mod claim_tests {
         let replacement =
             TestValidator::start(validator_status(), Err(tonic::Code::Internal)).await;
         let prepared = prepared_transfer(original.endpoint());
-        let node = submission_service(&[&replacement]);
+        let node = submission_service(&[&original, &replacement]);
         let saved = serde_json::to_vec(&prepared).unwrap();
         let id = ClaimNode::deploy_id(&node, &saved).unwrap();
         assert!(ClaimNode::submit(&node, &saved).await.is_err());

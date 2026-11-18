@@ -764,15 +764,16 @@ before submission. Concurrent requests return 409 while that lock is held.
 Pending retries return the existing ID and may resubmit the **same signed
 bytes**. An uncertain submission still returns that ID for status polling;
 it never opens another claim. Restart and cancellation retain the journal.
-The prepared validator endpoint is stored with the signed bytes and remains
-the preferred submission target. If submission returns any error, the service
-tries the current `NODE_HOSTS`, `NODE_GRPC_PORTS` and `NODE_HTTP_PORTS` inventory
-in order. A failed or incompatible replacement does not stop the search.
+The saved gRPC endpoint is tried first when the current `NODE_HOSTS`,
+`NODE_GRPC_PORTS` and `NODE_HTTP_PORTS` inventory maps it to one HTTP port.
+If the service cannot verify the saved endpoint or submit the deploy there,
+it tries the remaining validators in inventory order.
 Update that inventory and restart the faucet when retiring a validator;
 pending claims can then use a replacement without deleting their reservations.
 
-Before sending to a replacement, `/api/status` must explicitly report a ready,
-writable validator with the same `networkId`, `shardId`, `version.api` and
+Before each submission, `/api/status` on the configured HTTP port must respond
+directly and report a ready, writable validator with the same
+`networkId`, `shardId`, `version.api` and
 `nativeTokenDecimals` recorded during preparation. The node software version
 may differ. Older journals without that identity snapshot use the configured
 observer's `/api/status` as the trusted chain/protocol identity and require
