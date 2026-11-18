@@ -2196,8 +2196,8 @@ dependencies = [
 
 [[package]]
 name = "node_cli"
-version = "0.2.7"
-source = "git+https://github.com/F1R3FLY-io/rust-client.git?rev=aa6f275d1e60ad5d92ae52beda8455615f7e6179#aa6f275d1e60ad5d92ae52beda8455615f7e6179"
+version = "0.3.0"
+source = "git+https://github.com/F1R3FLY-io/rust-client.git?rev=e8620a46572dbc2ec53c81f4389f5abf5c02f0b0#e8620a46572dbc2ec53c81f4389f5abf5c02f0b0"
 dependencies = [
  "blake2",
  "bs58",

@@ -31,16 +31,17 @@ Unavailable, malformed, negative, or inexact balance responses do not enable cla
 Balance reads retain the system-vault exploratory query and the configured
 `EXPLORATORY_RETRY_BUDGET_SEC` for observer capacity refusals.
 
-The backend uses [asi-alliance/asi-chain-client, branch `rust-dev`](https://github.com/asi-alliance/asi-chain-client/tree/rust-dev)
-as a Cargo git dependency pinned to `5d1c9b4d12e33ec8b64a74a28df196ef03478e73`.
+The backend pins [F1R3FLY-io/rust-client](https://github.com/F1R3FLY-io/rust-client/pull/86)
+at `e8620a46572dbc2ec53c81f4389f5abf5c02f0b0`, a 0.3.0 candidate with typed admission and queue refusals.
 Cargo fetches it automatically; `Cargo.lock` records the exact Git source.
 Node protocol dependencies remain at `0ccc315d84b32d668e8db49cd56ba3c576693e15`.
-Phlo prices must fit positive `i64` and are encoded as uint256 protobuf values.
+Phlo prices are positive uint256 values encoded as 32-byte protobuf values.
 The validator and observer must support the uint256 monetary wire protocol.
 The ASI system-vault transfer ABI and exact balance query remain in use.
 HTTP integer and Phlo price responses accept string and legacy numeric encodings.
-Balances and transfer amounts remain exact uint256 values. A minimum Phlo price
-outside the client i64 range fails before signing.
+Balances, transfer amounts and the validator's minimum Phlo price retain
+uint256 precision. A zero price or a maximum charge above uint256 fails
+before signing.
 Build with the committed `nightly-2026-02-09` toolchain and `Cargo.lock`.
 
 The backend server is configured through environment variables defined in a `.env` file. All configuration is loaded at startup and validated before the server starts accepting requests.

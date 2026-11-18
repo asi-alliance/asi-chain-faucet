@@ -71,11 +71,11 @@ The ASI Chain Faucet consists of two main components working together to provide
 
 ### Running the Backend
 
-The backend uses [asi-alliance/asi-chain-client, branch `rust-dev`](https://github.com/asi-alliance/asi-chain-client/tree/rust-dev)
-as a Cargo git dependency pinned to `5d1c9b4d12e33ec8b64a74a28df196ef03478e73`.
+The backend pins [F1R3FLY-io/rust-client](https://github.com/F1R3FLY-io/rust-client/pull/86)
+at `e8620a46572dbc2ec53c81f4389f5abf5c02f0b0`, a 0.3.0 candidate with typed admission and queue refusals.
 Cargo fetches it automatically; `Cargo.lock` records the exact Git source.
 Node protocol dependencies remain at `0ccc315d84b32d668e8db49cd56ba3c576693e15`.
-Phlo prices must fit positive `i64` and are encoded as uint256 protobuf values.
+Phlo prices are positive uint256 values encoded as 32-byte protobuf values.
 
 ```bash
 # Clone the repository
@@ -314,18 +314,16 @@ ASI Alliance founding members: Fetch.ai, SingularityNET, and CUDOS
 
 ## Draft node admission compatibility
 
-This draft pins the client from
-[F1R3FLY-io/rust-client#86](https://github.com/F1R3FLY-io/rust-client/pull/86)
-at `aa6f275d1e60ad5d92ae52beda8455615f7e6179` for node
-[#789](https://github.com/F1R3FLY-io/f1r3node-rust/pull/789). That commit is
-three commits on top of the current `rust-dev` pin; repin to a merged client
-commit before this leaves draft.
+This change pins the tested client candidate `e8620a46572dbc2ec53c81f4389f5abf5c02f0b0`
+for bounded admission and deploy queues.
+[Client PR #86](https://github.com/F1R3FLY-io/rust-client/pull/86) · [Node #789](https://github.com/F1R3FLY-io/f1r3node-rust/pull/789) · [Node #990](https://github.com/F1R3FLY-io/f1r3node-rust/pull/990)
 
 Transfers are prepared and signed once before submission, and every failure
 after signing returns the original `deploy_id`:
 
 - `deploy_pool_busy`, `deploy_admission_busy` and `invalid_deploy_window`
-  return HTTP 503 with that exact code; a later request may succeed.
+  return HTTP 503 with that exact code. Queue capacity and availability
+  refusals also return 503 with their typed codes. A later request may succeed.
 - `deploy_too_large` and `deploy_expired` return HTTP 502 with that exact code;
   the node refused the faucet's own deploy and an alert is raised.
 - Lost or malformed RPC responses return HTTP 502 `deploy_submission_unknown`;
@@ -334,5 +332,5 @@ after signing returns the original `deploy_id`:
 The service does not retry or re-sign automatically. The UI displays these
 details and starts status polling only after acceptance. Balance reads retain
 exploratory-capacity retries; finalization and execution details use the
-observer HTTP port. This draft requires compatibility validation against a
-#789 node before merge and does not publish or deploy a new service.
+observer HTTP port. A queue status of `Rejected` is a terminal deploy error.
+Live compatibility with bounded admission and a deploy queue remains pending.

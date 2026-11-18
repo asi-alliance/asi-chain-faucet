@@ -69,11 +69,7 @@ impl NodeCliService {
         );
         let mut options =
             DeployOptions::default().with_phlo_limit(u64::try_from(self.config.deploy_phlo_limit)?);
-        // rust-dev accepts an i64 price and encodes it as uint256 for signing.
-        options.phlo_price = status
-            .min_phlo_price
-            .try_into()
-            .context("Node minimum Phlo price exceeds the client i64 range")?;
+        options.phlo_price = status.min_phlo_price;
         // Sign once and keep the ID: a refusal or an unknown outcome must name
         // the deploy that was sent, and the faucet never re-signs on its own.
         let signed = api
@@ -194,11 +190,15 @@ impl NodeCliService {
     }
 
     /// Raise a generic alert when finalization ends in a non-clean terminal
-    /// state (`Failed`/`Expired`) and no `systemDeployError` was reported.
+    /// state and no `systemDeployError` was reported.
     fn report_deploy_failure(&self, id: &str, status: &DeployFinalizationStatus) {
         let reason = match status.state.as_str() {
             "Failed" => "Deploy execution failed".to_string(),
             "Expired" => "Deploy expired".to_string(),
+            "Rejected" => status
+                .detail
+                .clone()
+                .unwrap_or_else(|| "Deploy rejected".into()),
             other => format!("Deploy ended in state {other}"),
         };
 
@@ -265,10 +265,11 @@ impl TransferSubmissionError {
         }
     }
 
-    /// A refusal that a later transfer request can get past: the pool or the
-    /// submission limit was full, or the validity height was not yet admissible.
+    /// A later faucet request prepares a fresh deploy. QueueFull only
+    /// rules out retrying the same signed deploy.
     pub fn is_retryable_refusal(&self) -> bool {
-        matches!(self, Self::Admission { reason, .. } if reason.is_retryable())
+        matches!(self, Self::Admission { reason, .. }
+            if reason.is_retryable() || *reason == DeployAdmissionReason::QueueFull)
     }
 }
 
@@ -279,7 +280,7 @@ impl std::fmt::Display for TransferSubmissionError {
                 deploy_id,
                 reason,
                 message,
-            } if reason.is_retryable() => write!(
+            } if self.is_retryable_refusal() => write!(
                 f,
                 "Deploy {deploy_id} not accepted ({reason}); please try again later: {message}"
             ),
@@ -336,6 +337,8 @@ mod submission_tests {
                 deploy_id: "signed-id".into(),
                 reason,
                 message: format!("{}: not accepted", reason.code()),
+                retry_after: None,
+                congestion: None,
             },
         )
     }
@@ -348,6 +351,10 @@ mod submission_tests {
             (DeployAdmissionReason::OutsideWindow, true),
             (DeployAdmissionReason::TooLarge, false),
             (DeployAdmissionReason::Expired, false),
+            (DeployAdmissionReason::QueueFull, true),
+            (DeployAdmissionReason::DeployerShareFull, true),
+            (DeployAdmissionReason::QueueNodeUnavailable, true),
+            (DeployAdmissionReason::QueueStopped, true),
         ] {
             let error = refusal(reason);
             assert!(
