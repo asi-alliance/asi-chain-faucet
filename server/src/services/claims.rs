@@ -30,6 +30,10 @@ pub enum ClaimError {
     Busy,
     Ineligible,
     Unavailable(anyhow::Error),
+    Submission {
+        deploy_id: String,
+        error: anyhow::Error,
+    },
 }
 impl From<anyhow::Error> for ClaimError {
     fn from(error: anyhow::Error) -> Self {
@@ -117,11 +121,13 @@ impl ClaimStore {
             }
             match node.status(&reservation.deploy_id).await? {
                 ClaimStatus::Pending => {
-                    // An unknown submission or crash can only resend the exact signed bytes.
-                    // A second failure keeps the reservation intact, and the ID is still usable.
-                    if let Err(error) = node.submit(&reservation.signed).await {
-                        tracing::warn!(deploy_id = %reservation.deploy_id, %error, "Claim submission remains uncertain");
-                    }
+                    // Retry the journaled bytes and retain the reservation on failure.
+                    node.submit(&reservation.signed).await.map_err(|error| {
+                        ClaimError::Submission {
+                            deploy_id: reservation.deploy_id.clone(),
+                            error,
+                        }
+                    })?;
                     return Ok(reservation.deploy_id);
                 }
                 ClaimStatus::Finalized(block) => {
@@ -147,9 +153,12 @@ impl ClaimStore {
             signed,
         };
         self.save(&path, &reservation)?;
-        if let Err(error) = node.submit(&reservation.signed).await {
-            tracing::warn!(%deploy_id, %error, "Claim submission uncertain; reservation retained");
-        }
+        node.submit(&reservation.signed)
+            .await
+            .map_err(|error| ClaimError::Submission {
+                deploy_id: deploy_id.clone(),
+                error,
+            })?;
         Ok(deploy_id)
     }
 
@@ -314,22 +323,20 @@ mod tests {
         let node = FakeNode::new();
         node.unknown.store(true, Ordering::SeqCst);
         let wide = crate::utils::tokens_to_units("10.000000000000000001", 18).unwrap();
-        assert_eq!(
+        assert!(matches!(
             directory
                 .store("network")
                 .claim(&node, "recipient", &wide, &wide)
-                .await
-                .unwrap(),
-            "deploy1"
-        );
+                .await,
+            Err(ClaimError::Submission { deploy_id, .. }) if deploy_id == "deploy1"
+        ));
         let reopened = directory.store("network");
-        assert_eq!(
+        assert!(matches!(
             reopened
                 .claim(&node, "recipient", &amount(), &wide)
-                .await
-                .unwrap(),
-            "deploy1"
-        );
+                .await,
+            Err(ClaimError::Submission { deploy_id, .. }) if deploy_id == "deploy1"
+        ));
         let journal_path = reopened.directory.join("recipient.json");
         let saved_bytes = fs::read(&journal_path).unwrap();
         let saved: Reservation = serde_json::from_slice(&saved_bytes).unwrap();
@@ -343,13 +350,12 @@ mod tests {
             .await
             .is_err());
         node.unavailable.store(false, Ordering::SeqCst);
-        assert_eq!(
+        assert!(matches!(
             reopened
                 .claim(&node, "recipient", &wide, &wide)
-                .await
-                .unwrap(),
-            "deploy1"
-        );
+                .await,
+            Err(ClaimError::Submission { deploy_id, .. }) if deploy_id == "deploy1"
+        ));
         assert_eq!(fs::read(journal_path).unwrap(), saved_bytes);
         assert_eq!(node.prepared.load(Ordering::SeqCst), 1);
         assert_eq!(*node.sent.lock().unwrap(), vec![vec![1]; 3]);

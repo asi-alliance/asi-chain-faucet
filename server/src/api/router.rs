@@ -58,8 +58,9 @@ pub fn create_router(state: AppState) -> Router {
             get(balance_handler).options(preflight),
         );
 
-    // Let exploratory retries and submission finish within the node client's
-    // bounded requests instead of cancelling them at the old seven-second limit.
+    // Balance and transfer operations use bounded node-client requests. An
+    // outer deadline would cut off exploratory retries or cancel submission
+    // before the handler can return the original signed ID on an unknown outcome.
     api_routes
         .layer(cors)
         .layer(RequestBodyLimitLayer::new(1024 * 1024))

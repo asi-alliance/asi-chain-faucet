@@ -102,6 +102,17 @@ Claim reconciliation, preparation or journal storage unavailable (503 Service Un
 }
 ```
 
+Submission errors carry the original `deploy_id` and keep its reservation.
+A retry for the same recipient may resend only the journaled bytes.
+
+| HTTP | Error code | Meaning |
+|---|---|---|
+| 503 | `deploy_pool_busy`, `deploy_admission_busy`, `invalid_deploy_window` | Temporary admission refusal |
+| 503 | `deploy_queue_full`, `node_unavailable`, `deploy_queue_stopped` | Queue capacity or availability refusal |
+| 502 | `deploy_too_large`, `deploy_expired` | Admission refused for the signed deploy |
+| 400 | `deploy_rejected` | Explicit untyped node rejection |
+| 502 | `deploy_submission_unknown` | No validator confirmed acceptance. Check the returned ID before retrying. |
+
 **Validation Rules:**
 
 1. **Address Format:**
@@ -267,7 +278,7 @@ GET /deploy/<deploy_id-returned-by-transfer> HTTP/1.1
 |--------|-------------|
 | Deploying | Observer reports `Pending`, including deploys it has not yet seen |
 | Finalized | Observer reports canonical finalization and no execution or vault-transfer error was found in available detail |
-| DeployError | Execution failure, expiry, or a rejected vault transfer |
+| DeployError | Execution failure, expiry, vault transfer rejection or deploy queue rejection |
 | Unknown | Observer returned an unrecognized finalization state |
 
 **Error Responses:**
@@ -403,13 +414,14 @@ the pre-claim ceiling. The response contains no signing or service credentials.
 `GET /config` also returns `"eligibility_policy":"strict_pre_claim_threshold"`.
 The balance before claiming must be strictly below the atomic ceiling; the
 resulting balance may exceed it. Only one deploy per network/recipient may be
-pending. `POST /transfer` retries resume the existing signed deploy and return
-its ID, including after an uncertain submission or service restart.
+pending. `POST /transfer` retries resume the existing signed deploy and include
+its ID on success or submission failure, including after a restart.
 
 A concurrent active request returns 409 (retry shortly). Reconciliation or
 journal failures return 503 and preserve existing reservations. Node-reported
-terminal states are reconciled before admitting another distribution; finalized
-claims require an updated finalized balance. See CONFIGURATION.md for required
+canonical terminal states are reconciled before admitting another distribution.
+Finalized claims require an updated finalized balance. A queue-local rejection
+leaves the reservation in place. See CONFIGURATION.md for required
 persistent storage and network namespace settings.
 
 The backend does not poll reservations in the background or release them on a

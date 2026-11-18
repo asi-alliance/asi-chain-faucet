@@ -5,8 +5,8 @@ use anyhow::{Context, Result};
 use node_cli::f1r3fly_api::{DeployFinalizationStatus, NodeStatus};
 use node_cli::vault::build_transfer_rholang;
 use node_cli::{
-    ConnectionConfig, DeployOptions, Endpoint, F1r3flyApi, F1r3flyConnectionManager, NodeHttp,
-    SigningKey,
+    ConnectionConfig, DeployAdmissionReason, DeployOptions, Endpoint, F1r3flyApi,
+    F1r3flyConnectionManager, NodeHttp, SigningKey,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -206,9 +206,11 @@ impl NodeCliService {
             .clone()
             .find(|(endpoint, _)| endpoint == &prepared.endpoint);
         let replacements = validators.filter(|(endpoint, _)| endpoint != &prepared.endpoint);
-        let mut first_error = None;
+        let mut validation_error = None;
+        let mut refusal = None;
+        let mut unknown = None;
         for (endpoint, node) in original.into_iter().chain(replacements) {
-            let attempt = async {
+            let checked_api = async {
                 anyhow::ensure!(
                     !self.config.node_sockets.iter().any(|other| {
                         other.host == node.host
@@ -219,24 +221,41 @@ impl NodeCliService {
                 );
                 let status = read_node_status(&node.host, node.http_port).await?;
                 compatibility.validate_validator(&status)?;
-                F1r3flyApi::new(Endpoint::parse(&endpoint)?)?
-                    .submit(deploy)
-                    .await?;
-                Ok::<(), anyhow::Error>(())
+                Ok::<_, anyhow::Error>(F1r3flyApi::new(Endpoint::parse(&endpoint)?)?)
             }
             .await;
-            match attempt {
-                Ok(()) => return Ok(()),
+            let api = match checked_api {
+                Ok(api) => api,
                 Err(error) => {
-                    warn!(%endpoint, %error, deploy_id = %deploy.id(),
-                        "Validator could not accept the saved deploy");
-                    first_error.get_or_insert(error);
+                    warn!(%endpoint, %error, "Validator could not be verified");
+                    validation_error.get_or_insert(error);
+                    continue;
+                }
+            };
+            let error = match api.submit(deploy).await {
+                Ok(_) => return Ok(()),
+                Err(error) => error,
+            };
+            warn!(%endpoint, %error, deploy_id = %deploy.id(),
+                "Validator did not confirm the saved deploy");
+            match &error {
+                node_cli::Error::DeployAdmissionRefused { .. } => {
+                    refusal.get_or_insert(error.into());
+                }
+                node_cli::Error::NodeRejected { message, .. } if !message.trim().is_empty() => {
+                    refusal.get_or_insert(error.into());
+                }
+                _ => {
+                    unknown.get_or_insert(error.into());
                 }
             }
         }
-        Err(first_error
+        // A refusal at one validator cannot resolve another validator's lost reply.
+        Err(unknown
+            .or(refusal)
+            .or(validation_error)
             .unwrap_or_else(|| anyhow::anyhow!("No configured validators"))
-            .context("No compatible validator accepted the saved deploy"))
+            .context("No compatible validator confirmed the saved deploy"))
     }
 
     pub async fn get_balance(&self, address: &str) -> Result<String> {
@@ -336,6 +355,10 @@ impl NodeCliService {
         let reason = match status.state.as_str() {
             "Failed" => "Deploy execution failed".to_string(),
             "Expired" => "Deploy expired".to_string(),
+            "Rejected" => status
+                .detail
+                .clone()
+                .unwrap_or_else(|| "Deploy rejected".into()),
             other => format!("Deploy ended in state {other}"),
         };
 
@@ -434,10 +457,16 @@ impl crate::services::claims::ClaimNode for NodeCliService {
         self.submit_prepared(&prepared, &deploy)
             .await
             .inspect_err(|error| {
-                self.alerts.notify(
-                    AlertEvent::new(AlertKind::TransferDeployFailed, error.to_string())
-                        .with_context("deploy_id", deploy.id()),
-                );
+                if !matches!(
+                    error.downcast_ref::<node_cli::Error>(),
+                    Some(node_cli::Error::DeployAdmissionRefused { reason, .. })
+                        if temporary_admission_refusal(*reason)
+                ) {
+                    self.alerts.notify(
+                        AlertEvent::new(AlertKind::TransferDeployFailed, format!("{error:#}"))
+                            .with_context("deploy_id", deploy.id()),
+                    );
+                }
             })?;
         Ok(())
     }
@@ -462,9 +491,16 @@ impl crate::services::claims::ClaimNode for NodeCliService {
             }
             "Failed" => ClaimStatus::Failed,
             "Expired" => ClaimStatus::Expired,
+            // A queue-local rejection cannot establish the outcome at another validator.
             _ => ClaimStatus::Pending,
         })
     }
+}
+
+pub(crate) fn temporary_admission_refusal(reason: DeployAdmissionReason) -> bool {
+    // QueueFull can still clear for a later HTTP request, even though the queue
+    // may reject the same signed bytes. The journal keeps them until reconciliation.
+    reason.is_retryable() || reason == DeployAdmissionReason::QueueFull
 }
 
 #[cfg(test)]
@@ -740,6 +776,58 @@ mod claim_tests {
     }
 
     #[tokio::test]
+    async fn a_later_refusal_does_not_hide_an_unknown_submission() {
+        let refusal = protobuf_bytes(1, &protobuf_bytes(1, b"deploy_pool_busy: full"));
+        let original =
+            TestValidator::start(validator_status(), Err(tonic::Code::Unavailable)).await;
+        let replacement = TestValidator::start_with_response(validator_status(), Ok(refusal)).await;
+        let prepared = prepared_transfer(original.endpoint());
+        let saved = serde_json::to_vec(&prepared).unwrap();
+
+        let node = submission_service(&[&original, &replacement]);
+        let error = ClaimNode::submit(&node, &saved).await.unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<node_cli::Error>(),
+            Some(node_cli::Error::Grpc { .. })
+        ));
+
+        let node = submission_service(&[&replacement]);
+        let error = ClaimNode::submit(&node, &saved).await.unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<node_cli::Error>(),
+            Some(node_cli::Error::DeployAdmissionRefused {
+                reason: DeployAdmissionReason::PoolBusy,
+                ..
+            })
+        ));
+        assert_eq!(
+            *original.submitted.lock().unwrap(),
+            vec![prepared.signed.clone()]
+        );
+        assert_eq!(
+            *replacement.submitted.lock().unwrap(),
+            vec![prepared.signed.clone(), prepared.signed]
+        );
+    }
+
+    #[tokio::test]
+    async fn queue_rejection_does_not_release_the_claim() {
+        let (port, observer) = serve(Router::new().route(
+            "/api/deploy-finalization-status/{id}",
+            get(|| async { Json(serde_json::json!({"state": "Rejected", "rejection_count": 1, "detail": "Refused the saved deploy"})) }),
+        )).await;
+        let mut config = AppConfig::from_env().unwrap();
+        config.observer_host = "127.0.0.1".into();
+        config.observer_http_port = port;
+        let node = NodeCliService::new(config.clone(), AlertService::new(&config));
+        assert!(matches!(
+            ClaimNode::status(&node, &"a".repeat(64)).await.unwrap(),
+            ClaimStatus::Pending
+        ));
+        observer.abort();
+    }
+
+    #[tokio::test]
     async fn unconfigured_legacy_endpoint_is_skipped_even_when_reachable() {
         let mut prepared = prepared_transfer(String::new());
         let id = node_cli::SignedDeploy::from_bytes(&prepared.signed)
@@ -874,13 +962,10 @@ mod claim_tests {
 
         assert!(ClaimNode::submit(&node, &saved).await.is_err());
         let amount = 10u32.into();
-        assert_eq!(
-            store
-                .claim(&node, "recipient", &amount, &amount)
-                .await
-                .unwrap(),
-            id
-        );
+        assert!(matches!(
+            store.claim(&node, "recipient", &amount, &amount).await,
+            Err(crate::services::claims::ClaimError::Submission { deploy_id, .. }) if deploy_id == id
+        ));
         assert_eq!(std::fs::read(path).unwrap(), journal);
         assert!(original.submitted.lock().unwrap().is_empty());
         assert!(replacement.submitted.lock().unwrap().is_empty());
