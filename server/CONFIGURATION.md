@@ -754,6 +754,21 @@ bottom-up, including the working directory for a relative root. This persists
 all directory entries created for a new or nested journal root before serving
 claims. A directory-sync failure prevents the store from opening.
 
+Journal storage is supported on Linux/POSIX local filesystems that provide
+advisory file locks, atomic replacement within one directory, file fsync and
+directory fsync. The filesystem and underlying volume must honor those durability
+guarantees. NFS, SMB and independent per-replica volumes are unsupported. Native
+Windows is not supported; enabling it requires a separate storage/product decision.
+Startup rejects non-Unix platforms instead of assuming POSIX directory semantics.
+
+Directory creation, locking, reads, writes, fsync and lock-file close run on
+Tokio's blocking pool. At most 16 admissions or detached journal operations are
+active per process; capacity exhaustion returns HTTP 503 before acquiring a
+recipient lock. The permit stays with the lock through reconciliation and
+submission. A canceled request cannot release the lock while its persistence
+operation is still running. A later retry resends only the saved deploy after
+file and directory durability have been confirmed.
+
 `FAUCET_NETWORK_ID` defaults to `default` and namespaces reservations. Set a
 stable unique ID for each chain, and keep it unchanged when rotating observer
 or validator endpoints, keys or monetary settings. Changing it bypasses the
