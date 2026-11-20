@@ -864,7 +864,9 @@ mod claim_tests {
         node.config.observer_http_port = port;
 
         let root = std::env::temp_dir().join(format!("faucet-claims-{}", uuid::Uuid::new_v4()));
-        let store = crate::services::claims::ClaimStore::open(&root, "A").unwrap();
+        let store = crate::services::claims::ClaimStore::open(&root, "A")
+            .await
+            .unwrap();
         let path = root.join("41/recipient.json"); // Hex-encoded network namespace "A".
         let journal = serde_json::to_vec(&serde_json::json!({
             "amount": "10", "deploy_id": id, "signed": saved
