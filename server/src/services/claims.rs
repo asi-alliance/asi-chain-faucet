@@ -62,6 +62,19 @@ struct Journal {
     path: PathBuf,
     #[cfg(test)]
     save_gate: Option<Arc<IoGate>>,
+    #[cfg(test)]
+    fail_directory_sync: bool,
+}
+
+impl Journal {
+    fn sync_parent(&self) -> Result<()> {
+        let directory = File::open(self.path.parent().context("Missing claim directory")?)?;
+        #[cfg(test)]
+        if self.fail_directory_sync {
+            return Err(std::io::Error::other("injected directory sync failure").into());
+        }
+        Ok(directory.sync_all()?)
+    }
 }
 
 struct ClaimGuard(Option<Journal>, tokio::runtime::Handle);
@@ -89,7 +102,7 @@ impl ClaimGuard {
             }
             file.sync_all().context("Unable to persist claim")?;
             fs::rename(temporary, &journal.path)?;
-            File::open(journal.path.parent().context("Missing claim directory")?)?.sync_all()?;
+            journal.sync_parent()?;
             // Cancellation cannot drop the recipient lock while this write is
             // still running. Submission is possible only after both fsyncs.
             Ok::<_, anyhow::Error>((
@@ -120,6 +133,8 @@ pub struct ClaimStore {
     read_gate: Option<Arc<IoGate>>,
     #[cfg(test)]
     save_gate: Option<Arc<IoGate>>,
+    #[cfg(test)]
+    fail_directory_sync: bool,
 }
 
 #[cfg(test)]
@@ -203,6 +218,8 @@ impl ClaimStore {
             read_gate: None,
             #[cfg(test)]
             save_gate: None,
+            #[cfg(test)]
+            fail_directory_sync: false,
         })
     }
 
@@ -223,6 +240,8 @@ impl ClaimStore {
         let path = self.directory.join(format!("{address}.json"));
         #[cfg(test)]
         let (read_gate, save_gate) = (self.read_gate.clone(), self.save_gate.clone());
+        #[cfg(test)]
+        let fail_directory_sync = self.fail_directory_sync;
         let (mut guard, existing) = tokio::task::spawn_blocking(move || {
             let lock = OpenOptions::new()
                 .create(true)
@@ -242,6 +261,8 @@ impl ClaimStore {
                 path,
                 #[cfg(test)]
                 save_gate,
+                #[cfg(test)]
+                fail_directory_sync,
             };
             #[cfg(test)]
             if let Some(gate) = read_gate {
@@ -260,9 +281,7 @@ impl ClaimStore {
                 File::open(&journal.path)
                     .and_then(|file| file.sync_all())
                     .map_err(anyhow::Error::from)?;
-                File::open(journal.path.parent().context("Missing claim directory")?)
-                    .and_then(|dir| dir.sync_all())
-                    .map_err(anyhow::Error::from)?;
+                journal.sync_parent()?;
             }
             Ok((
                 ClaimGuard(Some(journal), tokio::runtime::Handle::current()),
@@ -780,6 +799,43 @@ mod tests {
                 .unwrap();
         assert_eq!(*node.sent.lock().unwrap(), vec![saved.signed]);
     }
+    #[tokio::test]
+    async fn pending_claim_retries_directory_sync_before_submitting_saved_deploy() {
+        let directory = Directory::new();
+        let mut store = directory.store("network").await;
+        let node = FakeNode::new();
+        let value = amount();
+        let path = store.directory.join("recipient.json");
+
+        store.fail_directory_sync = true;
+        assert!(matches!(
+            store.claim(&node, "recipient", &value, &value).await,
+            Err(ClaimError::Unavailable(_))
+        ));
+        let original = fs::read(&path).unwrap();
+        let saved: Reservation = serde_json::from_slice(&original).unwrap();
+        assert_eq!(saved.deploy_id, node.deploy_id(&saved.signed).unwrap());
+        assert!(node.sent.lock().unwrap().is_empty());
+
+        assert!(matches!(
+            store.claim(&node, "recipient", &value, &value).await,
+            Err(ClaimError::Unavailable(_))
+        ));
+        assert_eq!(fs::read(&path).unwrap(), original);
+        assert!(node.sent.lock().unwrap().is_empty());
+
+        store.fail_directory_sync = false;
+        assert_eq!(
+            store
+                .claim(&node, "recipient", &value, &value)
+                .await
+                .unwrap(),
+            saved.deploy_id
+        );
+        assert_eq!(*node.sent.lock().unwrap(), vec![saved.signed]);
+        assert_eq!(node.prepared.load(Ordering::SeqCst), 1);
+    }
+
     #[tokio::test]
     async fn replacement_write_failure_preserves_previous_journal() {
         let directory = Directory::new();
