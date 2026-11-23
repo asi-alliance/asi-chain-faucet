@@ -609,6 +609,77 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn directory_sync_failure_after_replacement_recovers_the_new_deploy() {
+        let directory = Directory::new();
+        let mut store = directory.store("network").await;
+        store.slots = Arc::new(tokio::sync::Semaphore::new(1));
+        let node = FakeNode::new();
+        let value = amount();
+        assert_eq!(
+            store
+                .claim(&node, "recipient", &value, &value)
+                .await
+                .unwrap(),
+            "deploy1"
+        );
+
+        let path = store.directory.join("recipient.json");
+        let previous = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        *node.state.lock().unwrap() = "Expired".into();
+
+        // Inject the failure after admission; syncing the old journal must not
+        // prevent this test from reaching the replacement write.
+        let lock = OpenOptions::new()
+            .write(true)
+            .open(path.with_extension("lock"))
+            .unwrap();
+        lock.try_lock().unwrap();
+        let mut guard = ClaimGuard(
+            Some(Journal {
+                _lock: lock,
+                _permit: store.slots.clone().try_acquire_owned().unwrap(),
+                path: path.clone(),
+                save_gate: None,
+                fail_directory_sync: true,
+            }),
+            tokio::runtime::Handle::current(),
+        );
+        let replacement = store
+            .claim_locked(
+                &mut guard,
+                Some(previous),
+                &node,
+                "recipient",
+                &value,
+                &value,
+            )
+            .await;
+        assert!(matches!(
+            replacement,
+            Err(ClaimError::Unavailable(ref error))
+                if error.to_string() == "Injected claim directory sync failure"
+        ));
+        assert_eq!(*node.sent.lock().unwrap(), vec![vec![1]]);
+
+        let saved_bytes = fs::read(&path).unwrap();
+        let saved: Reservation = serde_json::from_slice(&saved_bytes).unwrap();
+        assert_eq!(saved.deploy_id, "deploy2");
+        assert_eq!(saved.signed, vec![2]);
+
+        *node.state.lock().unwrap() = "Pending".into();
+        assert_eq!(
+            store
+                .claim(&node, "recipient", &value, &value)
+                .await
+                .unwrap(),
+            saved.deploy_id
+        );
+        assert_eq!(*node.sent.lock().unwrap(), vec![vec![1], saved.signed]);
+        assert_eq!(node.prepared.load(Ordering::SeqCst), 2);
+        assert_eq!(fs::read(path).unwrap(), saved_bytes);
+    }
+
+    #[tokio::test]
     async fn networks_and_recipients_are_independent_and_corruption_fails_closed() {
         let directory = Directory::new();
         let node = FakeNode::new();
