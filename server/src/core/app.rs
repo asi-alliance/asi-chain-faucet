@@ -26,10 +26,10 @@ impl Application {
 
         let alerts = AlertService::new(&config);
 
-        let claims = Arc::new(crate::services::claims::ClaimStore::open(
-            &config.claims_directory,
-            &config.network_id,
-        )?);
+        let claims = Arc::new(
+            crate::services::claims::ClaimStore::open(&config.claims_directory, &config.network_id)
+                .await?,
+        );
 
         let state = AppState {
             config: config.clone(),
