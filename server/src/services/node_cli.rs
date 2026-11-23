@@ -18,6 +18,30 @@ pub struct NodeCliService {
     alerts: Arc<AlertService>,
 }
 
+/// No validator received the deploy: every configured endpoint failed its
+/// pre-submission check. This is an inventory or configuration failure, not an
+/// unknown submission outcome, and no node has the signed deploy.
+#[derive(Debug)]
+pub(crate) struct NotSubmitted(anyhow::Error);
+
+impl NotSubmitted {
+    pub(crate) fn new(cause: anyhow::Error) -> Self {
+        Self(cause)
+    }
+}
+
+impl std::fmt::Display for NotSubmitted {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "No validator accepted the deploy for submission: {:#}",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for NotSubmitted {}
+
 // Prefer the validator used during preparation. Keep its chain/protocol identity
 // as well, so a retired endpoint can be replaced without signing a new deploy.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -207,7 +231,8 @@ impl NodeCliService {
             .find(|(endpoint, _)| endpoint == &prepared.endpoint);
         let replacements = validators.filter(|(endpoint, _)| endpoint != &prepared.endpoint);
         let mut validation_error = None;
-        let mut refusal = None;
+        let mut temporary_refusal = None;
+        let mut permanent_refusal = None;
         let mut unknown = None;
         for (endpoint, node) in original.into_iter().chain(replacements) {
             let checked_api = async {
@@ -227,7 +252,8 @@ impl NodeCliService {
             let api = match checked_api {
                 Ok(api) => api,
                 Err(error) => {
-                    warn!(%endpoint, %error, "Validator could not be verified");
+                    warn!(%endpoint, %error, deploy_id = %deploy.id(),
+                        "Validator could not be verified");
                     validation_error.get_or_insert(error);
                     continue;
                 }
@@ -238,23 +264,37 @@ impl NodeCliService {
             };
             warn!(%endpoint, %error, deploy_id = %deploy.id(),
                 "Validator did not confirm the saved deploy");
+            // Keep the most consequential verdict rather than the first, so the
+            // configured order cannot turn a deploy that needs attention into a
+            // temporary refusal, or hide a lost reply behind a refusal.
             match &error {
-                node_cli::Error::DeployAdmissionRefused { .. } => {
+                node_cli::Error::DeployAdmissionRefused { reason, .. } => {
+                    let refusal = if temporary_admission_refusal(*reason) {
+                        &mut temporary_refusal
+                    } else {
+                        &mut permanent_refusal
+                    };
                     refusal.get_or_insert(error.into());
                 }
                 node_cli::Error::NodeRejected { message, .. } if !message.trim().is_empty() => {
-                    refusal.get_or_insert(error.into());
+                    permanent_refusal.get_or_insert(error.into());
                 }
                 _ => {
                     unknown.get_or_insert(error.into());
                 }
             }
         }
-        // A refusal at one validator cannot resolve another validator's lost reply.
+        // A refusal at one validator cannot resolve another validator's lost reply,
+        // and a permanent refusal matters more than a temporary one.
         Err(unknown
-            .or(refusal)
-            .or(validation_error)
-            .unwrap_or_else(|| anyhow::anyhow!("No configured validators"))
+            .or(permanent_refusal)
+            .or(temporary_refusal)
+            .or_else(|| validation_error.map(|error| anyhow::Error::new(NotSubmitted::new(error))))
+            .unwrap_or_else(|| {
+                anyhow::Error::new(NotSubmitted::new(anyhow::anyhow!(
+                    "No configured validators"
+                )))
+            })
             .context("No compatible validator confirmed the saved deploy"))
     }
 
@@ -492,6 +532,12 @@ impl crate::services::claims::ClaimNode for NodeCliService {
             "Failed" => ClaimStatus::Failed,
             "Expired" => ClaimStatus::Expired,
             // A queue-local rejection cannot establish the outcome at another validator.
+            // Nothing else reports it when the browser stops polling, so alert here
+            // and leave the reservation for the recovery procedure.
+            "Rejected" => {
+                self.report_deploy_failure(id, &status);
+                ClaimStatus::Pending
+            }
             _ => ClaimStatus::Pending,
         })
     }
@@ -811,20 +857,104 @@ mod claim_tests {
     }
 
     #[tokio::test]
-    async fn queue_rejection_does_not_release_the_claim() {
-        let (port, observer) = serve(Router::new().route(
-            "/api/deploy-finalization-status/{id}",
-            get(|| async { Json(serde_json::json!({"state": "Rejected", "rejection_count": 1, "detail": "Refused the saved deploy"})) }),
-        )).await;
+    async fn queue_rejection_keeps_the_claim_and_alerts() {
+        let (sender, mut received) = tokio::sync::mpsc::unbounded_channel();
+        let app = Router::new()
+            .route(
+                "/api/deploy-finalization-status/{id}",
+                get(|| async {
+                    Json(serde_json::json!({
+                        "state": "Rejected", "rejection_count": 1,
+                        "detail": "Term failed validation"
+                    }))
+                }),
+            )
+            .route(
+                "/alerts",
+                post(move |Json(payload): Json<serde_json::Value>| {
+                    let sender = sender.clone();
+                    async move {
+                        sender.send(payload).unwrap();
+                        axum::http::StatusCode::OK
+                    }
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         let mut config = AppConfig::from_env().unwrap();
         config.observer_host = "127.0.0.1".into();
         config.observer_http_port = port;
+        config.alerts_enabled = true;
+        config.mattermost_webhook_url = Some(crate::config::Secret::new(format!(
+            "http://127.0.0.1:{port}/alerts"
+        )));
         let node = NodeCliService::new(config.clone(), AlertService::new(&config));
+        let id = "a".repeat(64);
         assert!(matches!(
-            ClaimNode::status(&node, &"a".repeat(64)).await.unwrap(),
+            ClaimNode::status(&node, &id).await.unwrap(),
             ClaimStatus::Pending
         ));
-        observer.abort();
+        let payload = tokio::time::timeout(Duration::from_secs(5), received.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let text = payload["text"].as_str().unwrap();
+        assert!(text.contains("Term failed validation"), "{text}");
+        assert!(text.contains(&id), "{text}");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn the_worst_refusal_does_not_depend_on_validator_order() {
+        // A queue-local refusal clears on a later request; a permanent refusal
+        // needs attention. The reported code must not follow the inventory order.
+        let temporary = protobuf_bytes(1, &protobuf_bytes(1, b"deploy_pool_busy: full"));
+        let permanent = protobuf_bytes(1, &protobuf_bytes(1, b"deploy_too_large: over limit"));
+        for (first, second) in [
+            (temporary.clone(), permanent.clone()),
+            (permanent.clone(), temporary.clone()),
+        ] {
+            let original = TestValidator::start_with_response(validator_status(), Ok(first)).await;
+            let replacement =
+                TestValidator::start_with_response(validator_status(), Ok(second)).await;
+            let prepared = prepared_transfer(original.endpoint());
+            let node = submission_service(&[&original, &replacement]);
+            let error = ClaimNode::submit(&node, &serde_json::to_vec(&prepared).unwrap())
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(
+                    error.downcast_ref::<node_cli::Error>(),
+                    Some(node_cli::Error::DeployAdmissionRefused {
+                        reason: DeployAdmissionReason::TooLarge,
+                        ..
+                    })
+                ),
+                "{error:#}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn unverifiable_validators_report_that_nothing_was_submitted() {
+        let mut status = validator_status();
+        status["networkId"] = serde_json::json!("another-chain");
+        let original = TestValidator::start(status.clone(), Ok("unused".into())).await;
+        let replacement = TestValidator::start(status, Ok("unused".into())).await;
+        let prepared = prepared_transfer(original.endpoint());
+        let node = submission_service(&[&original, &replacement]);
+        let error = ClaimNode::submit(&node, &serde_json::to_vec(&prepared).unwrap())
+            .await
+            .unwrap_err();
+        assert!(error.downcast_ref::<NotSubmitted>().is_some(), "{error:#}");
+        assert!(
+            format!("{error:#}").contains("No validator accepted the deploy for submission"),
+            "{error:#}"
+        );
+        for validator in [&original, &replacement] {
+            assert!(validator.submitted.lock().unwrap().is_empty());
+        }
     }
 
     #[tokio::test]

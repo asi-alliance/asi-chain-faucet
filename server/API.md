@@ -75,6 +75,19 @@ Content-Type: application/json
 
 **Error Responses:**
 
+Every error body has the shape below. `error` carries a machine code from the
+table in "Submission errors"; other failures use a human-readable message.
+`details` may be `null`, and `deploy_id` is omitted when it does not apply.
+
+```json
+{
+  "error": "deploy_pool_busy",
+  "details": "deploy_pool_busy: the deploy pool would exceed its configured limit. Retry later or submit to another validator.",
+  "timestamp": "2025-10-29T12:34:56.789Z",
+  "deploy_id": "3045022100..."
+}
+```
+
 Invalid address format (400 Bad Request):
 ```json
 {
@@ -103,15 +116,30 @@ Claim reconciliation, preparation or journal storage unavailable (503 Service Un
 ```
 
 Submission errors carry the original `deploy_id` and keep its reservation.
-A retry for the same recipient may resend only the journaled bytes.
+A retry for the same recipient may resend only the journaled bytes. When the
+node supplies a queue retry hint, the response also sets `Retry-After` in
+seconds.
 
 | HTTP | Error code | Meaning |
 |---|---|---|
 | 503 | `deploy_pool_busy`, `deploy_admission_busy`, `invalid_deploy_window` | Temporary admission refusal |
-| 503 | `deploy_queue_full`, `node_unavailable`, `deploy_queue_stopped` | Queue capacity or availability refusal |
+| 503 | `deploy_queue_full` (queue full), `node_unavailable`, `deploy_queue_stopped` | Queue capacity or availability refusal |
+| 502 | `deploy_queue_full` (deployer share full) | Queue holds too many of the faucet's deploys |
 | 502 | `deploy_too_large`, `deploy_expired` | Admission refused for the signed deploy |
-| 400 | `deploy_rejected` | Explicit untyped node rejection |
+| 502 | `deploy_rejected` | Explicit untyped node rejection |
+| 503 | `deploy_not_submitted` | No configured validator passed its pre-submission check; nothing was sent |
 | 502 | `deploy_submission_unknown` | No validator confirmed acceptance. Check the returned ID before retrying. |
+
+A deploy queue reports a full queue and a full per-deployer share with the same
+`deploy_queue_full` code. A full queue is the 503 refusal that can clear; a
+share-full refusal is a 502 that keeps the reservation and alerts, because the
+queue already holds too many of the faucet's deploys. A `503` refusal can clear
+for a later request, while a `502` refusal means the validators that answered
+cannot accept these bytes. The faucet never re-signs a journaled deploy.
+
+When several validators refuse, the response reports the most consequential
+outcome: an unknown submission outranks a permanent refusal, which outranks a
+temporary one. Validator order never changes the code.
 
 **Validation Rules:**
 
@@ -421,8 +449,10 @@ A concurrent active request returns 409 (retry shortly). Reconciliation or
 journal failures return 503 and preserve existing reservations. Node-reported
 canonical terminal states are reconciled before admitting another distribution.
 Finalized claims require an updated finalized balance. A queue-local rejection
-leaves the reservation in place. See CONFIGURATION.md for required
-persistent storage and network namespace settings.
+leaves the reservation in place and raises an operator alert; it clears only if
+another validator finalizes the deploy or the reservation is removed with the
+manual procedure. See CONFIGURATION.md for required persistent storage and
+network namespace settings.
 
 The backend does not poll reservations in the background or release them on a
 timer. Closing the browser or ending a polling session does not cancel the

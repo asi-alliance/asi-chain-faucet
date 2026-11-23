@@ -31,8 +31,9 @@ Unavailable, malformed, negative, or inexact balance responses do not enable cla
 Balance reads retain the system-vault exploratory query and the configured
 `EXPLORATORY_RETRY_BUDGET_SEC` for observer capacity refusals.
 
-The backend uses [F1R3FLY-io/rust-client PR #86](https://github.com/F1R3FLY-io/rust-client/pull/86)
-as a Cargo git dependency pinned to `e8620a46572dbc2ec53c81f4389f5abf5c02f0b0`.
+The backend uses [asi-alliance/asi-chain-client, branch `rust-dev`](https://github.com/asi-alliance/asi-chain-client/tree/rust-dev)
+as a Cargo git dependency pinned to `dd1f182837b7c51648834fcbf88c797dd677b581`,
+the commit that merged [rust-client PR #86](https://github.com/F1R3FLY-io/rust-client/pull/86) into upstream `dev`.
 Cargo fetches it automatically; `Cargo.lock` records the exact Git source.
 Node protocol dependencies remain at `0ccc315d84b32d668e8db49cd56ba3c576693e15`.
 Phlo prices are positive uint256 values and are encoded as 32-byte protobuf values.
@@ -789,8 +790,12 @@ applies its admission rules, including its minimum Phlo price. A submission
 error, including a gRPC error or node rejection, is not treated as a canonical
 terminal verdict. If no replacement accepts the deploy, the existing
 reservation remains intact. The API preserves typed admission and queue refusal
-codes. An unknown outcome at any attempted validator takes precedence over a
-refusal at another validator.
+codes, and passes a queue's `retry-after` hint on as the `Retry-After` header.
+An unknown outcome at any attempted validator takes precedence over a permanent
+refusal, which takes precedence over a temporary one, so the configured
+validator order never changes the reported code. When every validator fails its
+pre-verification check, nothing was submitted and the API returns
+`deploy_not_submitted` instead of an unknown outcome.
 
 Reservations are reconciled on the next claim. Only node-reported `Failed`,
 `Expired` or `Finalized` permit a new eligibility check; elapsed wall time,
@@ -818,7 +823,9 @@ configured capacity retry budget. New admission returns 400 if ineligible,
 or 503 if reconciliation/storage is unavailable. Status is queried when a
 client polls a deploy or retries a claim. There is no background polling,
 and elapsed time never clears a reservation. A queue-local rejection remains
-reserved because another validator may have accepted the same deploy.
+reserved because another validator may have accepted the same deploy. Observing
+one raises the `DeployFailed` alert during reconciliation, so an abandoned
+request cannot leave a silent stuck reservation.
 
 
 When upgrading an existing installation, explicitly set `FAUCET_AMOUNT=10000`
@@ -843,6 +850,14 @@ A pending reservation keeps the recipient reserved. HTTP 200 from `/transfer`
 confirms submission, and a submission error also includes the saved deploy ID.
 Use the observer to establish whether the transfer finalized. Time alone is
 never proof that a deploy cannot execute.
+
+A deploy queue's `Rejected` verdict is terminal for that queue only: the same
+signed deploy may still be finalized elsewhere, so the reservation is not
+released. Reconciliation raises the `DeployFailed` alert when it observes one.
+If no validator finalizes the deploy, the recipient stays reserved until this
+procedure removes the journal entry. Prepared deploys set no explicit
+expiration, so a signed deploy stops being admissible only after the node's
+deploy lifespan passes its `validAfterBlockNumber`.
 
 1. Identify the recipient and deploy ID from the claim response or error log.
    Files live at `FAUCET_CLAIMS_DIR/<hex-encoded FAUCET_NETWORK_ID>/<address>.json`.

@@ -1,7 +1,10 @@
-use axum::{http::StatusCode, response::Json};
+use axum::response::{Json, Response};
 use serde::{Deserialize, Serialize};
 
-pub type ApiResult<T> = Result<Json<T>, (StatusCode, Json<ErrorResponse>)>;
+/// Rendered handler failures. A response type lets an error carry headers such
+/// as `Retry-After` in addition to the JSON body.
+pub type ApiError = Response;
+pub type ApiResult<T> = Result<Json<T>, ApiError>;
 
 #[derive(Debug, Deserialize)]
 pub struct TransferRequest {

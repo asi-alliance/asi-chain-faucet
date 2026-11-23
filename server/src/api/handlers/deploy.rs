@@ -7,7 +7,7 @@ use crate::{
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::Json,
+    response::{IntoResponse, Json},
 };
 use tracing::{error, info};
 
@@ -62,7 +62,8 @@ pub async fn deploy_info_handler(
             Json(ErrorResponse::validation_error(
                 "FAUCET: Invalid deploy ID format (must be 100-160 alphanumeric chars)",
             )),
-        ));
+        )
+            .into_response());
     }
 
     match node_cli_service.get_deploy_info(deploy_id.clone()).await {
@@ -80,7 +81,8 @@ pub async fn deploy_info_handler(
                 Json(ErrorResponse::internal_error(
                     "FAUCET: Failed to retrieve deploy info",
                 )),
-            ))
+            )
+                .into_response())
         }
     }
 }

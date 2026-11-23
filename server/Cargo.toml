@@ -34,7 +34,7 @@ rand = "0.9.5"
 reqwest = { version = "0.12.28", features = ["json", "rustls-tls"], default-features = false }
 
 # Client 0.3.0 candidate for typed admission and queue refusals (#86).
-node_cli = { git = "https://github.com/F1R3FLY-io/rust-client.git", rev = "e8620a46572dbc2ec53c81f4389f5abf5c02f0b0", default-features = false }
+node_cli = { git = "https://github.com/asi-alliance/asi-chain-client.git", rev = "dd1f182837b7c51648834fcbf88c797dd677b581", default-features = false }
 
 [dev-dependencies]
 proptest = "1.12.0"
