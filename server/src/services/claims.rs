@@ -67,13 +67,15 @@ struct Journal {
 }
 
 impl Journal {
-    fn sync_parent(&self) -> Result<()> {
+    fn sync_directory(&self) -> Result<()> {
         let directory = File::open(self.path.parent().context("Missing claim directory")?)?;
         #[cfg(test)]
-        if self.fail_directory_sync {
-            return Err(std::io::Error::other("injected directory sync failure").into());
-        }
-        Ok(directory.sync_all()?)
+        anyhow::ensure!(
+            !self.fail_directory_sync,
+            "Injected claim directory sync failure"
+        );
+        directory.sync_all()?;
+        Ok(())
     }
 }
 
@@ -102,7 +104,7 @@ impl ClaimGuard {
             }
             file.sync_all().context("Unable to persist claim")?;
             fs::rename(temporary, &journal.path)?;
-            journal.sync_parent()?;
+            journal.sync_directory()?;
             // Cancellation cannot drop the recipient lock while this write is
             // still running. Submission is possible only after both fsyncs.
             Ok::<_, anyhow::Error>((
@@ -281,7 +283,7 @@ impl ClaimStore {
                 File::open(&journal.path)
                     .and_then(|file| file.sync_all())
                     .map_err(anyhow::Error::from)?;
-                journal.sync_parent()?;
+                journal.sync_directory()?;
             }
             Ok((
                 ClaimGuard(Some(journal), tokio::runtime::Handle::current()),
@@ -607,6 +609,77 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn directory_sync_failure_after_replacement_recovers_the_new_deploy() {
+        let directory = Directory::new();
+        let mut store = directory.store("network").await;
+        store.slots = Arc::new(tokio::sync::Semaphore::new(1));
+        let node = FakeNode::new();
+        let value = amount();
+        assert_eq!(
+            store
+                .claim(&node, "recipient", &value, &value)
+                .await
+                .unwrap(),
+            "deploy1"
+        );
+
+        let path = store.directory.join("recipient.json");
+        let previous = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        *node.state.lock().unwrap() = "Expired".into();
+
+        // Inject the failure after admission; syncing the old journal must not
+        // prevent this test from reaching the replacement write.
+        let lock = OpenOptions::new()
+            .write(true)
+            .open(path.with_extension("lock"))
+            .unwrap();
+        lock.try_lock().unwrap();
+        let mut guard = ClaimGuard(
+            Some(Journal {
+                _lock: lock,
+                _permit: store.slots.clone().try_acquire_owned().unwrap(),
+                path: path.clone(),
+                save_gate: None,
+                fail_directory_sync: true,
+            }),
+            tokio::runtime::Handle::current(),
+        );
+        let replacement = store
+            .claim_locked(
+                &mut guard,
+                Some(previous),
+                &node,
+                "recipient",
+                &value,
+                &value,
+            )
+            .await;
+        assert!(matches!(
+            replacement,
+            Err(ClaimError::Unavailable(ref error))
+                if error.to_string() == "Injected claim directory sync failure"
+        ));
+        assert_eq!(*node.sent.lock().unwrap(), vec![vec![1]]);
+
+        let saved_bytes = fs::read(&path).unwrap();
+        let saved: Reservation = serde_json::from_slice(&saved_bytes).unwrap();
+        assert_eq!(saved.deploy_id, "deploy2");
+        assert_eq!(saved.signed, vec![2]);
+
+        *node.state.lock().unwrap() = "Pending".into();
+        assert_eq!(
+            store
+                .claim(&node, "recipient", &value, &value)
+                .await
+                .unwrap(),
+            saved.deploy_id
+        );
+        assert_eq!(*node.sent.lock().unwrap(), vec![vec![1], saved.signed]);
+        assert_eq!(node.prepared.load(Ordering::SeqCst), 2);
+        assert_eq!(fs::read(path).unwrap(), saved_bytes);
+    }
+
+    #[tokio::test]
     async fn networks_and_recipients_are_independent_and_corruption_fails_closed() {
         let directory = Directory::new();
         let node = FakeNode::new();
@@ -800,29 +873,40 @@ mod tests {
         assert_eq!(*node.sent.lock().unwrap(), vec![saved.signed]);
     }
     #[tokio::test]
-    async fn pending_claim_retries_directory_sync_before_submitting_saved_deploy() {
+    async fn directory_sync_failure_after_rename_retries_only_the_saved_deploy() {
         let directory = Directory::new();
         let mut store = directory.store("network").await;
-        let node = FakeNode::new();
-        let value = amount();
-        let path = store.directory.join("recipient.json");
-
         store.fail_directory_sync = true;
-        assert!(matches!(
-            store.claim(&node, "recipient", &value, &value).await,
-            Err(ClaimError::Unavailable(_))
-        ));
-        let original = fs::read(&path).unwrap();
-        let saved: Reservation = serde_json::from_slice(&original).unwrap();
-        assert_eq!(saved.deploy_id, node.deploy_id(&saved.signed).unwrap());
-        assert!(node.sent.lock().unwrap().is_empty());
+        let value = amount();
+        let node = FakeNode::new();
 
+        let first = store.claim(&node, "recipient", &value, &value).await;
         assert!(matches!(
-            store.claim(&node, "recipient", &value, &value).await,
-            Err(ClaimError::Unavailable(_))
+            first,
+            Err(ClaimError::Unavailable(ref error))
+                if error.to_string().contains("Injected claim directory sync failure")
         ));
-        assert_eq!(fs::read(&path).unwrap(), original);
         assert!(node.sent.lock().unwrap().is_empty());
+        assert_eq!(node.prepared.load(Ordering::SeqCst), 1);
+        // The rename succeeded without a successful directory sync.
+        let path = store.directory.join("recipient.json");
+        assert!(!store.directory.join("recipient.tmp").exists());
+        let saved_bytes = fs::read(&path).unwrap();
+        let saved: Reservation = serde_json::from_slice(&saved_bytes).unwrap();
+        assert_eq!(saved.deploy_id, "deploy1");
+        assert_eq!(saved.signed, vec![1]);
+
+        // Retry through the same store to exercise request recovery without
+        // the directory sync that reopening the store would perform.
+        let retry = store.claim(&node, "recipient", &value, &value).await;
+        assert!(matches!(
+            retry,
+            Err(ClaimError::Unavailable(ref error))
+                if error.to_string().contains("Injected claim directory sync failure")
+        ));
+        assert!(node.sent.lock().unwrap().is_empty());
+        assert_eq!(node.prepared.load(Ordering::SeqCst), 1);
+        assert_eq!(fs::read(&path).unwrap(), saved_bytes);
 
         store.fail_directory_sync = false;
         assert_eq!(
@@ -834,6 +918,7 @@ mod tests {
         );
         assert_eq!(*node.sent.lock().unwrap(), vec![saved.signed]);
         assert_eq!(node.prepared.load(Ordering::SeqCst), 1);
+        assert_eq!(fs::read(&path).unwrap(), saved_bytes);
     }
 
     #[tokio::test]
