@@ -4,7 +4,7 @@ use crate::{
     AppState,
 };
 use axum::http::{
-    header::{AUTHORIZATION, CONTENT_TYPE},
+    header::{AUTHORIZATION, CONTENT_TYPE, RETRY_AFTER},
     Method, StatusCode,
 };
 use axum::{
@@ -39,6 +39,7 @@ pub fn create_router(state: AppState) -> Router {
         .allow_origin(Any)
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
         .allow_headers([CONTENT_TYPE, AUTHORIZATION])
+        .expose_headers([RETRY_AFTER])
         .max_age(Duration::from_secs(60 * 60));
 
     let api_routes = Router::new()

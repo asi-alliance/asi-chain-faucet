@@ -799,9 +799,8 @@ be verified, recovery fails closed. Keep the observer on the original chain
 when rotating validators. `FAUCET_NETWORK_ID` is a local journal namespace,
 not a substitute for the node's network ID.
 
-Every submission sends the original signed deploy with the original ID;
-amount, fees and validity fields are never regenerated. A replacement still
-applies its admission rules, including its minimum Phlo price. A submission
+Failover within a submission sends identical signed bytes to each validator.
+Each validator applies its admission rules, including its minimum Phlo price. A submission
 error, including a gRPC error or node rejection, is not treated as a canonical
 terminal verdict. If no replacement accepts the deploy, the existing
 reservation remains intact. The API preserves typed admission and queue refusal
@@ -815,9 +814,20 @@ the API returns `deploy_not_submitted`. On a retry of a saved claim the same
 verification failure returns `deploy_submission_unknown` because the journal
 does not establish the outcome of earlier attempts.
 
-Reservations are reconciled on the next claim. Only node-reported `Failed`,
-`Expired` or `Finalized` permit a new eligibility check; elapsed wall time,
-missing status, observer failures and malformed journals never release a claim.
+A known queue-wide capacity cause can require a fresh validity window. After
+all attempts were explicitly refused or skipped before transmission, the
+faucet can persist a refusal record with the signed reservation under
+`refused` and the earliest fresh-signing time under `refresh.after`. A retry
+after that time checks the balance again and journals a newly prepared deploy
+before sending. The per-deployer limit and an unknown cause keep the same bytes.
+Before a resend, the faucet durably replaces the refusal record with the
+ordinary reservation. A crash during sending, a lost response or an existing
+legacy reservation therefore keeps the original ID across subsequent refusals.
+Older faucet versions fail closed when reading the new refusal record.
+
+Reservations that could have been submitted require a node-reported `Failed`,
+`Expired` or `Finalized` to permit a new eligibility check. Elapsed time,
+missing status, observer failures and malformed journals preserve such claims.
 For `Finalized`, reconciliation uses the observer HTTP balance API to verify
 the inclusion block and then read the current finalized balance at a height
 at least as high as inclusion. This permits later claims after spending while
@@ -842,8 +852,11 @@ or 503 if reconciliation/storage is unavailable. Status is queried when a
 client polls a deploy or retries a claim. There is no background polling,
 and elapsed time never clears a reservation. A queue-local rejection remains
 reserved because another validator may have accepted the same deploy. Observing
-one raises the `DeployFailed` alert during reconciliation, so an abandoned
-request cannot leave a silent stuck reservation.
+one while polling or reconciling raises the `DeployFailed` alert. When the
+observer reports `Pending` without an inclusion block, the faucet probes
+configured validator HTTP endpoints for `Rejected`, up to four concurrently
+within a shared two-second budget. Failed probes leave the observer result
+intact. Only the observer supplies canonical finality and balances.
 
 
 When upgrading an existing installation, explicitly set `FAUCET_AMOUNT=10000`
@@ -879,6 +892,7 @@ deploy lifespan passes its `validAfterBlockNumber`.
 
 1. Identify the recipient and deploy ID from the claim response or error log.
    Files live at `FAUCET_CLAIMS_DIR/<hex-encoded FAUCET_NETWORK_ID>/<address>.json`.
+   For refusal records, inspect the reservation under `refused`.
    Inspect `deploy_id` and `amount` (atomic units). `signed` holds
    the serialized prepared transfer, including the original validator endpoint
    and exact signed deploy bytes, plus a chain/protocol identity snapshot in

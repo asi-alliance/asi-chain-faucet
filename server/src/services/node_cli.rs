@@ -18,6 +18,69 @@ pub struct NodeCliService {
     alerts: Arc<AlertService>,
 }
 
+/// Stable names used by the queue on its public API.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QueueCause {
+    Validator,
+    ValidatorIdle,
+    Shard,
+    Storage,
+    DeployerShare,
+}
+
+impl QueueCause {
+    pub(crate) fn from_refusal(error: &node_cli::Error) -> Option<Self> {
+        use node_cli::QueueCongestion;
+        match error {
+            node_cli::Error::DeployAdmissionRefused {
+                reason: DeployAdmissionReason::DeployerShareFull,
+                ..
+            } => Some(Self::DeployerShare),
+            node_cli::Error::DeployAdmissionRefused {
+                reason: DeployAdmissionReason::QueueFull,
+                congestion: Some(cause),
+                ..
+            } => match cause {
+                QueueCongestion::Validator => Some(Self::Validator),
+                QueueCongestion::ValidatorIdle => Some(Self::ValidatorIdle),
+                QueueCongestion::Shard => Some(Self::Shard),
+                QueueCongestion::Storage => Some(Self::Storage),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+}
+
+/// Attached to the reported error only when every endpoint either refused
+/// explicitly or was skipped before sending. Recovery considers every refusal,
+/// even when the API reports a different validator's higher-priority reason.
+#[derive(Debug, Default)]
+pub(crate) struct ConfirmedRefusals {
+    pub fresh_cause: Option<QueueCause>,
+    pub wait: Duration,
+}
+
+impl ConfirmedRefusals {
+    pub fn record(&mut self, error: &node_cli::Error) {
+        if let node_cli::Error::DeployAdmissionRefused { retry_after, .. } = error {
+            self.wait = self.wait.max(retry_after.unwrap_or_default());
+            if let Some(cause) =
+                QueueCause::from_refusal(error).filter(|c| *c != QueueCause::DeployerShare)
+            {
+                self.fresh_cause.get_or_insert(cause);
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for ConfirmedRefusals {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("No endpoint accepted this submission attempt")
+    }
+}
+
 /// Every validator failed verification before submission on this attempt.
 /// A journaled deploy may have reached a validator on an earlier attempt.
 #[derive(Debug)]
@@ -134,11 +197,63 @@ impl NodeCliService {
     }
 
     async fn finalization_status(&self, id: &str) -> Result<DeployFinalizationStatus> {
-        self.observer()?.deploy_finalization_status(id).await?
+        let status = self.observer()?.deploy_finalization_status(id).await?
             .with_context(|| format!(
                 "Observer {}:{} does not serve /api/deploy-finalization-status/{{id}} (HTTP 404); configure an observer that supports this endpoint",
                 self.config.observer_host, self.config.observer_http_port
-            ))
+            ))?;
+        if status.state == "Pending" && status.latest_block_hash.is_none() {
+            if let Some(rejection) = self.queue_rejection(id).await {
+                return Ok(rejection);
+            }
+        }
+        Ok(status)
+    }
+
+    /// Queue-local verdicts are diagnostic only. An unavailable queue must
+    /// neither mask the observer's status nor consume the entire polling deadline.
+    async fn queue_rejection(&self, id: &str) -> Option<DeployFinalizationStatus> {
+        let mut endpoints = self
+            .config
+            .node_sockets
+            .iter()
+            .map(|node| (&node.host, node.http_port))
+            .filter(|(host, port)| {
+                **host != self.config.observer_host || *port != self.config.observer_http_port
+            })
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter();
+        let mut probes = tokio::task::JoinSet::new();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                while probes.len() < 4 {
+                    let Some((host, port)) = endpoints.next() else {
+                        break;
+                    };
+                    let url = format!("http://{host}:{port}");
+                    let id = id.to_owned();
+                    probes.spawn(async move {
+                        let api = NodeHttp::new(Endpoint::parse(&url).ok()?).ok()?;
+                        tokio::time::timeout(
+                            Duration::from_secs(1),
+                            api.deploy_finalization_status(&id),
+                        )
+                        .await
+                        .ok()?
+                        .ok()
+                        .flatten()
+                    });
+                }
+                if let Ok(Some(status)) = probes.join_next().await? {
+                    if status.state == "Rejected" {
+                        return Some(status);
+                    }
+                }
+            }
+        })
+        .await
+        .ok()
+        .flatten()
     }
 
     async fn prepare_transfer(&self, to_address: &str) -> Result<Vec<u8>> {
@@ -230,6 +345,7 @@ impl NodeCliService {
             .find(|(endpoint, _)| endpoint == &prepared.endpoint);
         let replacements = validators.filter(|(endpoint, _)| endpoint != &prepared.endpoint);
         let mut validation_error = None;
+        let mut confirmed = Some(ConfirmedRefusals::default());
         let mut temporary_refusal = None;
         let mut permanent_refusal = None;
         let mut unknown = None;
@@ -268,6 +384,9 @@ impl NodeCliService {
             // temporary refusal, or hide a lost reply behind a refusal.
             match &error {
                 node_cli::Error::DeployAdmissionRefused { reason, .. } => {
+                    if let Some(summary) = &mut confirmed {
+                        summary.record(&error);
+                    }
                     let refusal = if temporary_admission_refusal(*reason) {
                         &mut temporary_refusal
                     } else {
@@ -276,16 +395,18 @@ impl NodeCliService {
                     refusal.get_or_insert(error.into());
                 }
                 node_cli::Error::NodeRejected { message, .. } if !message.trim().is_empty() => {
+                    confirmed = None;
                     permanent_refusal.get_or_insert(error.into());
                 }
                 _ => {
+                    confirmed = None;
                     unknown.get_or_insert(error.into());
                 }
             }
         }
         // A refusal at one validator cannot resolve another validator's lost reply,
         // and a permanent refusal matters more than a temporary one.
-        Err(unknown
+        let error = unknown
             .or(permanent_refusal)
             .or(temporary_refusal)
             .or_else(|| validation_error.map(|error| anyhow::Error::new(NotSubmitted::new(error))))
@@ -294,7 +415,11 @@ impl NodeCliService {
                     "No configured validators"
                 )))
             })
-            .context("No compatible validator confirmed the saved deploy"))
+            .context("No compatible validator confirmed the saved deploy");
+        Err(match confirmed {
+            Some(summary) => error.context(summary),
+            None => error,
+        })
     }
 
     pub async fn get_balance(&self, address: &str) -> Result<String> {
@@ -543,8 +668,8 @@ impl crate::services::claims::ClaimNode for NodeCliService {
 }
 
 pub(crate) fn temporary_admission_refusal(reason: DeployAdmissionReason) -> bool {
-    // QueueFull can still clear for a later HTTP request, even though the queue
-    // may reject the same signed bytes. The journal keeps them until reconciliation.
+    // This class describes HTTP availability. The cause and the durable
+    // submission history separately determine which bytes can be sent next.
     reason.is_retryable() || reason == DeployAdmissionReason::QueueFull
 }
 
@@ -640,6 +765,17 @@ mod claim_tests {
             status: serde_json::Value,
             answer: Result<Vec<u8>, tonic::Code>,
         ) -> Self {
+            Self::start_with_grpc(
+                status,
+                answer.map_err(|code| tonic::Status::new(code, "test validator response")),
+            )
+            .await
+        }
+
+        async fn start_with_grpc(
+            status: serde_json::Value,
+            answer: Result<Vec<u8>, tonic::Status>,
+        ) -> Self {
             let submitted = Arc::new(Mutex::new(Vec::new()));
             let requests = submitted.clone();
             let http = Router::new().route(
@@ -673,9 +809,7 @@ mod claim_tests {
                                     .body(axum::body::Body::from(frame))
                                     .unwrap()
                             }
-                            Err(code) => {
-                                tonic::Status::new(code, "test validator response").into_http()
-                            }
+                            Err(status) => status.into_http(),
                         }
                     }
                 }),
@@ -882,8 +1016,18 @@ mod claim_tests {
         let port = listener.local_addr().unwrap().port();
         let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         let mut config = AppConfig::from_env().unwrap();
+        let (observer_port, observer) = serve(Router::new().route(
+            "/api/deploy-finalization-status/{id}",
+            get(|| async { Json(serde_json::json!({"state":"Pending", "rejection_count":0})) }),
+        ))
+        .await;
         config.observer_host = "127.0.0.1".into();
-        config.observer_http_port = port;
+        config.observer_http_port = observer_port;
+        config.node_sockets = vec![crate::utils::NodeSocket {
+            host: "127.0.0.1".into(),
+            http_port: port,
+            grpc_port: port,
+        }];
         config.alerts_enabled = true;
         config.mattermost_webhook_url = Some(crate::config::Secret::new(format!(
             "http://127.0.0.1:{port}/alerts"
@@ -901,7 +1045,118 @@ mod claim_tests {
         let text = payload["text"].as_str().unwrap();
         assert!(text.contains("Term failed validation"), "{text}");
         assert!(text.contains(&id), "{text}");
+        let info = node.get_deploy_info(id).await.unwrap();
+        assert_eq!(info.finalization.state, "Rejected");
+        assert_eq!(
+            info.finalization.detail.as_deref(),
+            Some("Term failed validation")
+        );
+        observer.abort();
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn cross_origin_claim_reads_the_queue_refusal_and_wait() {
+        // Older queues provide the cause in their message and the wait in metadata.
+        let mut refusal = tonic::Status::resource_exhausted(
+            "deploy queue is full: the signed deploys the queue holds fill its storage budget",
+        );
+        refusal
+            .metadata_mut()
+            .insert("retry-after", "7".parse().unwrap());
+        let queue = TestValidator::start_with_grpc(validator_status(), Err(refusal)).await;
+        let mut node = submission_service(&[&queue]);
+        let (observer_port, observer) = serve(Router::new().route(
+            "/api/deploy-finalization-status/{id}",
+            get(|| async { Json(serde_json::json!({"state":"Pending", "rejection_count":0})) }),
+        ))
+        .await;
+        node.config.observer_host = "127.0.0.1".into();
+        node.config.observer_http_port = observer_port;
+        let prepared = prepared_transfer(queue.endpoint());
+        let signed = serde_json::to_vec(&prepared).unwrap();
+        let id = ClaimNode::deploy_id(&node, &signed).unwrap();
+        let address = "1111222222222222222222222222222222222222";
+        let root = std::env::temp_dir().join(format!("faucet-claims-{}", uuid::Uuid::new_v4()));
+        let claims = crate::services::claims::ClaimStore::open(&root, "A")
+            .await
+            .unwrap();
+        let path = root.join("41").join(format!("{address}.json"));
+        let legacy = serde_json::to_vec(
+            &serde_json::json!({"amount":"10", "deploy_id":id, "signed":signed}),
+        )
+        .unwrap();
+        std::fs::write(&path, &legacy).unwrap();
+        let (port, faucet) = serve(crate::api::create_router(crate::AppState {
+            config: node.config,
+            alerts: node.alerts,
+            claims: Arc::new(claims),
+            start_time: std::time::Instant::now(),
+        }))
+        .await;
+        let response = reqwest::Client::new()
+            .post(format!("http://127.0.0.1:{port}/transfer"))
+            .header("origin", "https://wallet.example")
+            .json(&serde_json::json!({"to_address":address}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 503);
+        assert_eq!(response.headers()["retry-after"], "7");
+        assert_eq!(
+            response.headers()["access-control-expose-headers"],
+            "retry-after"
+        );
+        let body: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(body["deploy_id"], id);
+        assert_eq!(body["cause"], "storage");
+        assert_eq!(body["error"], "deploy_queue_full");
+        assert_eq!(std::fs::read(path).unwrap(), legacy);
+        faucet.abort();
+        observer.abort();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn recovery_uses_all_refusals_but_never_overrides_a_lost_reply() {
+        let mut share = tonic::Status::resource_exhausted(
+            "deploy queue is full for this deployer: limit reached",
+        );
+        share
+            .metadata_mut()
+            .insert("retry-after", "12".parse().unwrap());
+        let original = TestValidator::start_with_grpc(validator_status(), Err(share)).await;
+        let mut full = tonic::Status::resource_exhausted(
+            "deploy queue is full: the validator has created no block while the shard moved on",
+        );
+        full.metadata_mut()
+            .insert("retry-after", "7".parse().unwrap());
+        let replacement = TestValidator::start_with_grpc(validator_status(), Err(full)).await;
+        let prepared = prepared_transfer(original.endpoint());
+        let saved = serde_json::to_vec(&prepared).unwrap();
+        let error = ClaimNode::submit(&submission_service(&[&original, &replacement]), &saved)
+            .await
+            .unwrap_err();
+        let summary = error.downcast_ref::<ConfirmedRefusals>().unwrap();
+        assert_eq!(summary.fresh_cause, Some(QueueCause::ValidatorIdle));
+        assert_eq!(summary.wait, Duration::from_secs(12));
+        assert_eq!(
+            QueueCause::from_refusal(error.downcast_ref::<node_cli::Error>().unwrap()),
+            Some(QueueCause::DeployerShare)
+        );
+
+        let lost = TestValidator::start(validator_status(), Err(tonic::Code::Unavailable)).await;
+        let error = ClaimNode::submit(
+            &submission_service(&[&original, &replacement, &lost]),
+            &saved,
+        )
+        .await
+        .unwrap_err();
+        assert!(error.downcast_ref::<ConfirmedRefusals>().is_none());
+        assert!(matches!(
+            error.downcast_ref::<node_cli::Error>(),
+            Some(node_cli::Error::Grpc { .. })
+        ));
     }
 
     #[tokio::test]

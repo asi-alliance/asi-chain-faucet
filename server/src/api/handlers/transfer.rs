@@ -2,7 +2,7 @@ use crate::{
     api::models::{ApiResult, ErrorResponse, TransferRequest, TransferResponse},
     services::{
         claims::ClaimError,
-        node_cli::{temporary_admission_refusal, NodeCliService, NotSubmitted},
+        node_cli::{temporary_admission_refusal, NodeCliService, NotSubmitted, QueueCause},
     },
     AppState,
 };
@@ -61,6 +61,23 @@ impl IntoResponse for ClaimError {
                     "Claim unavailable. Any existing reservation is retained; retry later.",
                 )
             }
+            ClaimError::WaitingForFreshDeploy {
+                deploy_id,
+                cause,
+                retry_after,
+            } => {
+                return SubmissionError {
+                    status: StatusCode::SERVICE_UNAVAILABLE,
+                    code: "deploy_queue_full",
+                    details:
+                        "The queue refused the previous deploy. Retry after the indicated wait."
+                            .into(),
+                    cause: Some(cause),
+                    retry_after: Some(retry_after),
+                    deploy_id,
+                }
+                .into_response();
+            }
             ClaimError::Submission {
                 deploy_id,
                 error,
@@ -80,6 +97,7 @@ impl IntoResponse for ClaimError {
 struct SubmissionError {
     status: StatusCode,
     code: &'static str,
+    cause: Option<QueueCause>,
     details: String,
     deploy_id: String,
     retry_after: Option<Duration>,
@@ -127,6 +145,9 @@ impl SubmissionError {
         Self {
             status,
             code,
+            cause: error
+                .downcast_ref::<node_cli::Error>()
+                .and_then(QueueCause::from_refusal),
             details,
             deploy_id,
             retry_after,
@@ -134,8 +155,9 @@ impl SubmissionError {
     }
 
     fn into_response(self) -> Response {
-        let body =
+        let mut body =
             ErrorResponse::new(self.code.into(), Some(self.details)).with_deploy_id(self.deploy_id);
+        body.cause = self.cause;
         let mut response = (self.status, Json(body)).into_response();
         if let Some(retry_after) = self.retry_after {
             if let Ok(seconds) = HeaderValue::from_str(&retry_after.as_secs().to_string()) {
@@ -213,6 +235,38 @@ mod tests {
             assert_eq!(body["error"], reason.code());
             assert_eq!(body["deploy_id"], "original-id");
             assert!(headers.get(header::RETRY_AFTER).is_none(), "{reason}");
+        }
+    }
+
+    #[tokio::test]
+    async fn queue_causes_are_optional_and_machine_readable() {
+        use node_cli::QueueCongestion::*;
+        use DeployAdmissionReason::{DeployerShareFull, QueueFull};
+        for (reason, congestion, expected) in [
+            (QueueFull, Some(Validator), Some("validator")),
+            (QueueFull, Some(ValidatorIdle), Some("validator_idle")),
+            (QueueFull, Some(Shard), Some("shard")),
+            (QueueFull, Some(Storage), Some("storage")),
+            (DeployerShareFull, None, Some("deployer_share")),
+            (QueueFull, None, None),
+        ] {
+            let (_, _, body) = render(ClaimError::Submission {
+                is_retry: false,
+                deploy_id: "id".into(),
+                error: node_cli::Error::DeployAdmissionRefused {
+                    deploy_id: "id".into(),
+                    reason,
+                    congestion,
+                    message: "full".into(),
+                    retry_after: None,
+                }
+                .into(),
+            })
+            .await;
+            assert_eq!(
+                body.get("cause").map(|cause| cause.as_str().unwrap()),
+                expected
+            );
         }
     }
 

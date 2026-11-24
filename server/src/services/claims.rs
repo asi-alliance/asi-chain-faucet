@@ -1,5 +1,6 @@
 //! Durable admission control. A signed deploy is journaled before any submission.
 //! Locks are advisory OS locks, shared by processes using the same local volume.
+use super::node_cli::{ConfirmedRefusals, QueueCause};
 use anyhow::{Context, Result};
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
@@ -8,6 +9,7 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     sync::{Arc, OnceLock},
+    time::{Duration, SystemTime},
 };
 
 pub(crate) trait ClaimNode {
@@ -31,6 +33,11 @@ pub enum ClaimError {
     Busy,
     Ineligible,
     Unavailable(anyhow::Error),
+    WaitingForFreshDeploy {
+        deploy_id: String,
+        cause: QueueCause,
+        retry_after: Duration,
+    },
     Submission {
         is_retry: bool,
         deploy_id: String,
@@ -48,6 +55,47 @@ struct Reservation {
     amount: String,
     deploy_id: String,
     signed: Vec<u8>,
+}
+
+// The ordinary record is written before every send. A crash in flight or a
+// legacy record therefore means "possibly submitted". The distinct refused
+// shape also prevents an older binary from replaying a proven-unsent record
+// while leaving its proof on disk for a newer binary.
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum JournalEntry {
+    Refused {
+        refused: Reservation,
+        refresh: Option<Refresh>,
+    },
+    PossiblySubmitted(Reservation),
+}
+
+#[derive(Serialize, Deserialize)]
+struct Refresh {
+    after: SystemTime,
+    cause: QueueCause,
+}
+
+enum SubmissionAttempt {
+    First,
+    RetryAfterRefusal,
+    RetryUncertain,
+}
+
+impl JournalEntry {
+    fn after_refusal(reservation: Reservation, error: &anyhow::Error) -> Option<Self> {
+        let summary = error.downcast_ref::<ConfirmedRefusals>()?;
+        let refresh = summary.fresh_cause.and_then(|cause| {
+            SystemTime::now()
+                .checked_add(summary.wait)
+                .map(|after| Refresh { after, cause })
+        });
+        Some(Self::Refused {
+            refused: reservation,
+            refresh,
+        })
+    }
 }
 
 // Bound both active admissions and detached persistence work after cancellation.
@@ -97,7 +145,7 @@ impl Drop for ClaimGuard {
 }
 
 impl ClaimGuard {
-    async fn save(&mut self, reservation: Reservation) -> Result<Reservation> {
+    async fn save<T: Serialize + Send + 'static>(&mut self, reservation: T) -> Result<T> {
         let journal = self.0.take().expect("claim owns its journal");
         let (guard, reservation) = tokio::task::spawn_blocking(move || {
             let temporary = journal.path.with_extension("tmp");
@@ -277,7 +325,7 @@ impl ClaimStore {
             }
             let existing = match fs::read(&journal.path) {
                 Ok(bytes) => Some(
-                    serde_json::from_slice::<Reservation>(&bytes).map_err(anyhow::Error::from)?,
+                    serde_json::from_slice::<JournalEntry>(&bytes).map_err(anyhow::Error::from)?,
                 ),
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
                 Err(error) => return Err(anyhow::Error::from(error).into()),
@@ -307,29 +355,45 @@ impl ClaimStore {
     async fn claim_locked(
         &self,
         guard: &mut ClaimGuard,
-        existing: Option<Reservation>,
+        existing: Option<JournalEntry>,
         node: &impl ClaimNode,
         address: &str,
         amount: &BigUint,
         ceiling: &BigUint,
     ) -> Result<String, ClaimError> {
         // The guard stays held across eligibility, preparation and submission.
-        if let Some(reservation) = existing {
+        if let Some(entry) = existing {
+            let (reservation, attempt, refresh) = match entry {
+                JournalEntry::PossiblySubmitted(reservation) => {
+                    (reservation, SubmissionAttempt::RetryUncertain, None)
+                }
+                JournalEntry::Refused { refused, refresh } => {
+                    (refused, SubmissionAttempt::RetryAfterRefusal, refresh)
+                }
+            };
             node_cli::vault::parse_amount(&reservation.amount).map_err(anyhow::Error::from)?;
             if node.deploy_id(&reservation.signed)? != reservation.deploy_id {
                 return Err(anyhow::anyhow!("Corrupt claim journal").into());
             }
             match node.status(&reservation.deploy_id).await? {
                 ClaimStatus::Pending => {
-                    // Retry the journaled bytes and retain the reservation on failure.
-                    node.submit(&reservation.signed).await.map_err(|error| {
-                        ClaimError::Submission {
-                            is_retry: true,
-                            deploy_id: reservation.deploy_id.clone(),
-                            error,
+                    if let Some(refresh) = refresh {
+                        if let Ok(remaining) = refresh.after.duration_since(SystemTime::now()) {
+                            return Err(ClaimError::WaitingForFreshDeploy {
+                                deploy_id: reservation.deploy_id,
+                                cause: refresh.cause,
+                                retry_after: Duration::from_secs(
+                                    remaining
+                                        .as_secs()
+                                        .saturating_add(u64::from(remaining.subsec_nanos() > 0)),
+                                ),
+                            });
                         }
-                    })?;
-                    return Ok(reservation.deploy_id);
+                        // All sends were refused. Recheck eligibility below
+                        // before preparing and durably replacing the deploy.
+                    } else {
+                        return Self::submit_reserved(guard, node, reservation, attempt).await;
+                    }
                 }
                 ClaimStatus::Finalized(block) => {
                     // Read finalized state at or beyond the canonical inclusion. An observer
@@ -353,15 +417,37 @@ impl ClaimStore {
             deploy_id: deploy_id.clone(),
             signed,
         };
-        let reservation = guard.save(reservation).await?;
-        node.submit(&reservation.signed)
-            .await
-            .map_err(|error| ClaimError::Submission {
-                is_retry: false,
-                deploy_id: deploy_id.clone(),
-                error,
-            })?;
-        Ok(deploy_id)
+        Self::submit_reserved(guard, node, reservation, SubmissionAttempt::First).await
+    }
+
+    async fn submit_reserved(
+        guard: &mut ClaimGuard,
+        node: &impl ClaimNode,
+        reservation: Reservation,
+        attempt: SubmissionAttempt,
+    ) -> Result<String, ClaimError> {
+        let known_unsent = !matches!(attempt, SubmissionAttempt::RetryUncertain);
+        let reservation = if known_unsent {
+            // Clear any refusal proof durably before exposing the bytes to a node.
+            guard.save(reservation).await?
+        } else {
+            reservation
+        };
+        let deploy_id = reservation.deploy_id.clone();
+        let Err(error) = node.submit(&reservation.signed).await else {
+            return Ok(deploy_id);
+        };
+
+        if known_unsent {
+            if let Some(entry) = JournalEntry::after_refusal(reservation, &error) {
+                guard.save(entry).await?;
+            }
+        }
+        Err(ClaimError::Submission {
+            is_retry: !matches!(attempt, SubmissionAttempt::First),
+            deploy_id,
+            error,
+        })
     }
 }
 
@@ -380,6 +466,7 @@ mod tests {
         state: Mutex<String>,
         prepared: AtomicUsize,
         sent: Mutex<Vec<Vec<u8>>>,
+        queue_refusal: Mutex<Option<(node_cli::DeployAdmissionReason, Duration)>>,
         verification_failed: AtomicBool,
         unknown: AtomicBool,
         unavailable: AtomicBool,
@@ -395,6 +482,7 @@ mod tests {
                 state: Mutex::new("Pending".into()),
                 prepared: AtomicUsize::new(0),
                 sent: Mutex::new(vec![]),
+                queue_refusal: Mutex::new(None),
                 verification_failed: AtomicBool::new(false),
                 unknown: AtomicBool::new(false),
                 unavailable: AtomicBool::new(false),
@@ -434,6 +522,18 @@ mod tests {
                 );
             }
             self.sent.lock().unwrap().push(signed.to_vec());
+            if let Some((reason, wait)) = *self.queue_refusal.lock().unwrap() {
+                let error = node_cli::Error::DeployAdmissionRefused {
+                    deploy_id: self.deploy_id(signed)?,
+                    reason,
+                    message: "Queue refused".into(),
+                    retry_after: Some(wait),
+                    congestion: Some(node_cli::QueueCongestion::Shard),
+                };
+                let mut summary = ConfirmedRefusals::default();
+                summary.record(&error);
+                return Err(anyhow::Error::new(error).context(summary));
+            }
             if self.delay.swap(false, Ordering::SeqCst) {
                 self.entered.notify_one();
                 self.proceed.notified().await;
@@ -564,6 +664,96 @@ mod tests {
         assert_eq!(fs::read(journal_path).unwrap(), saved_bytes);
         assert_eq!(node.prepared.load(Ordering::SeqCst), 1);
         assert_eq!(*node.sent.lock().unwrap(), vec![vec![1]; 3]);
+    }
+
+    #[tokio::test]
+    async fn queue_recovery_after_restart_obeys_the_wait_and_rechecks_eligibility() {
+        use node_cli::DeployAdmissionReason::QueueFull;
+
+        let directory = Directory::new();
+        let node = FakeNode::new();
+        *node.queue_refusal.lock().unwrap() = Some((QueueFull, Duration::from_secs(60)));
+        let value = amount();
+        let store = directory.store("network").await;
+        assert!(matches!(
+            store.claim(&node, "recipient", &value, &value).await,
+            Err(ClaimError::Submission { .. })
+        ));
+        let reopened = directory.store("network").await;
+        assert!(
+            matches!(reopened.claim(&node, "recipient", &value, &value).await,
+            Err(ClaimError::WaitingForFreshDeploy { deploy_id, cause: QueueCause::Shard, retry_after })
+                if deploy_id == "deploy1" && retry_after.as_secs() > 0)
+        );
+        assert_eq!(*node.sent.lock().unwrap(), vec![vec![1]]);
+
+        // Advance the persisted deadline without making the test sleep.
+        let path = reopened.directory.join("recipient.json");
+        let JournalEntry::Refused {
+            refused,
+            refresh: Some(mut refresh),
+        } = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap()
+        else {
+            panic!("expected proven refusal")
+        };
+        refresh.after = SystemTime::UNIX_EPOCH;
+        fs::write(
+            path,
+            serde_json::to_vec(&JournalEntry::Refused {
+                refused,
+                refresh: Some(refresh),
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        *node.queue_refusal.lock().unwrap() = None;
+        *node.balance.lock().unwrap() = "10".into();
+        assert!(matches!(
+            reopened.claim(&node, "recipient", &value, &value).await,
+            Err(ClaimError::Ineligible)
+        ));
+        *node.balance.lock().unwrap() = "0".into();
+        assert_eq!(
+            reopened
+                .claim(&node, "recipient", &value, &value)
+                .await
+                .unwrap(),
+            "deploy2"
+        );
+        assert_eq!(*node.sent.lock().unwrap(), vec![vec![1], vec![2]]);
+    }
+
+    #[tokio::test]
+    async fn a_lost_reply_after_a_share_refusal_prevents_later_resigning() {
+        use node_cli::DeployAdmissionReason::{DeployerShareFull, QueueFull};
+
+        let directory = Directory::new();
+        let node = FakeNode::new();
+        let value = amount();
+        for (refusal, lost) in [
+            (Some(DeployerShareFull), false),
+            (None, true),
+            (Some(QueueFull), false),
+        ] {
+            *node.queue_refusal.lock().unwrap() = refusal.map(|reason| (reason, Duration::ZERO));
+            node.unknown.store(lost, Ordering::SeqCst);
+            assert!(
+                matches!(directory.store("network").await.claim(&node, "recipient", &value, &value).await,
+                Err(ClaimError::Submission { deploy_id, .. }) if deploy_id == "deploy1")
+            );
+        }
+        *node.queue_refusal.lock().unwrap() = None;
+        assert_eq!(
+            directory
+                .store("network")
+                .await
+                .claim(&node, "recipient", &value, &value)
+                .await
+                .unwrap(),
+            "deploy1"
+        );
+        assert_eq!(*node.sent.lock().unwrap(), vec![vec![1]; 4]);
+        assert_eq!(node.prepared.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]

@@ -71,7 +71,7 @@ Content-Type: application/json
 
 | Field | Type | Description |
 |-------|------|-------------|
-| deploy_id | string | Signed deploy ID (100-160 characters); pending retries return the existing ID |
+| deploy_id | string | Signed deploy ID (100-160 characters); reused while a previous submission could still land |
 
 **Error Responses:**
 
@@ -116,9 +116,8 @@ Claim reconciliation, preparation or journal storage unavailable (503 Service Un
 ```
 
 Submission errors carry the original `deploy_id` and keep its reservation.
-A retry for the same recipient may resend only the journaled bytes. When the
-node supplies a queue retry hint, the response also sets `Retry-After` in
-seconds.
+The API returns queue retry hints in seconds in the `Retry-After` header and
+exposes this header to cross-origin browser clients.
 
 | HTTP | Error code | Meaning |
 |---|---|---|
@@ -132,7 +131,18 @@ seconds.
 
 Queue capacity and per-deployer capacity both return HTTP 503 with
 `deploy_queue_full`. Both are temporary refusals and suppress the submission
-failure alert. The node's message in `details` identifies the limit reached.
+failure alert. When the client recognizes the reason, the optional JSON field
+`cause` is one of `validator`, `validator_idle`, `shard`, `storage`, or
+`deployer_share`. Unrecognized causes are omitted. The pinned client recognizes
+the queue messages used by older queues and node #1123.
+
+When only the per-deployer limit is reached, the faucet retries the signed
+bytes. If any queue reports one of the other four known causes, the faucet may
+return a new ID after the longest wait from the refusing validators, provided
+the journal proves that every attempt was refused or stopped before sending.
+Early retries receive
+503 with the remaining wait and original ID. The faucet checks eligibility
+again before signing. Any uncertain submission retains the original bytes.
 
 Within one request, an unknown submission takes precedence over a permanent
 refusal, which takes precedence over a temporary one. Among refusals of equal
@@ -443,13 +453,15 @@ the pre-claim ceiling. The response contains no signing or service credentials.
 `GET /config` also returns `"eligibility_policy":"strict_pre_claim_threshold"`.
 The balance before claiming must be strictly below the atomic ceiling; the
 resulting balance may exceed it. Only one deploy per network/recipient may be
-pending. `POST /transfer` retries resume the existing signed deploy and include
-its ID on success or submission failure, including after a restart.
+pending. The journal retains the submission outcome across restart. Each
+`POST /transfer` response for a submission includes the affected deploy ID.
 
 A concurrent active request returns 409 (retry shortly). Reconciliation or
 journal failures return 503 and preserve existing reservations. Node-reported
 canonical terminal states are reconciled before admitting another distribution.
-Finalized claims require an updated finalized balance. A queue-local rejection
+Finalized claims require an updated finalized balance. When the observer reports
+`Pending` without an inclusion block, the faucet checks configured validator
+HTTP endpoints for queue-local rejections. A queue-local rejection
 leaves the reservation in place and raises an operator alert; it clears only if
 another validator finalizes the deploy or the reservation is removed with the
 manual procedure. See CONFIGURATION.md for required persistent storage and
