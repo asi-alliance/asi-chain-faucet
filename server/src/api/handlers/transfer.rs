@@ -37,38 +37,42 @@ pub async fn transfer_handler(
             &state.config.faucet_max_balance,
         )
         .await
-        .map_err(claim_error_response)?;
+        .map_err(IntoResponse::into_response)?;
     Ok(Json(TransferResponse {
         deploy_id: Some(deploy_id),
     }))
 }
 
-fn claim_error_response(error: ClaimError) -> Response {
-    let (status, message) = match error {
-        ClaimError::Busy => (
-            StatusCode::CONFLICT,
-            "A claim for this address is being processed. Retry shortly.",
-        ),
-        ClaimError::Ineligible => (
-            StatusCode::BAD_REQUEST,
-            "Address balance must be strictly below the pre-claim eligibility threshold.",
-        ),
-        ClaimError::Unavailable(error) => {
-            tracing::error!(%error, "Claim could not be reconciled or persisted");
-            (
-                StatusCode::SERVICE_UNAVAILABLE,
-                "Claim unavailable. Any existing reservation is retained; retry later.",
-            )
-        }
-        ClaimError::Submission { deploy_id, error } => {
-            return SubmissionError::classify(deploy_id, &error).into_response()
-        }
-    };
-    (
-        status,
-        Json(ErrorResponse::new(message.into(), Some(message.into()))),
-    )
-        .into_response()
+impl IntoResponse for ClaimError {
+    fn into_response(self) -> Response {
+        let (status, message) = match self {
+            ClaimError::Busy => (
+                StatusCode::CONFLICT,
+                "A claim for this address is being processed. Retry shortly.",
+            ),
+            ClaimError::Ineligible => (
+                StatusCode::BAD_REQUEST,
+                "Address balance must be strictly below the pre-claim eligibility threshold.",
+            ),
+            ClaimError::Unavailable(error) => {
+                tracing::error!(%error, "Claim could not be reconciled or persisted");
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Claim unavailable. Any existing reservation is retained; retry later.",
+                )
+            }
+            ClaimError::Submission {
+                deploy_id,
+                error,
+                is_retry,
+            } => return SubmissionError::classify(deploy_id, &error, is_retry).into_response(),
+        };
+        (
+            status,
+            Json(ErrorResponse::new(message.into(), Some(message.into()))),
+        )
+            .into_response()
+    }
 }
 
 /// A submission failure as the client sees it. Every variant returns the
@@ -82,7 +86,7 @@ struct SubmissionError {
 }
 
 impl SubmissionError {
-    fn classify(deploy_id: String, error: &anyhow::Error) -> Self {
+    fn classify(deploy_id: String, error: &anyhow::Error, is_retry: bool) -> Self {
         let (status, code, details, retry_after) = match error.downcast_ref::<node_cli::Error>() {
             Some(node_cli::Error::DeployAdmissionRefused {
                 reason,
@@ -106,8 +110,8 @@ impl SubmissionError {
                 message.clone(),
                 None,
             ),
-            // Nothing reached a validator, so this is not an unknown outcome.
-            _ if error.downcast_ref::<NotSubmitted>().is_some() => (
+            // Only the first attempt can establish that these bytes were never sent.
+            _ if !is_retry && error.downcast_ref::<NotSubmitted>().is_some() => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 "deploy_not_submitted",
                 "No validator accepted the deploy for submission; nothing was sent. The saved claim remains reserved.".into(),
@@ -149,7 +153,7 @@ mod tests {
 
     /// Render a claim failure the way the handler does: status, headers, body.
     async fn render(error: ClaimError) -> (StatusCode, axum::http::HeaderMap, serde_json::Value) {
-        let response = claim_error_response(error);
+        let response = error.into_response();
         let status = response.status();
         let headers = response.headers().clone();
         let body = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -193,6 +197,7 @@ mod tests {
             ),
         ] {
             let (status, headers, body) = render(ClaimError::Submission {
+                is_retry: false,
                 deploy_id: "original-id".into(),
                 error: node_cli::Error::DeployAdmissionRefused {
                     deploy_id: "original-id".into(),
@@ -214,6 +219,7 @@ mod tests {
     #[tokio::test]
     async fn a_queue_retry_hint_becomes_a_retry_after_header() {
         let (status, headers, body) = render(ClaimError::Submission {
+            is_retry: false,
             deploy_id: "original-id".into(),
             error: node_cli::Error::DeployAdmissionRefused {
                 deploy_id: "original-id".into(),
@@ -233,6 +239,7 @@ mod tests {
     #[tokio::test]
     async fn unknown_submission_returns_the_original_id() {
         let (status, _, body) = render(ClaimError::Submission {
+            is_retry: false,
             deploy_id: "original-id".into(),
             error: anyhow::anyhow!("Transport error"),
         })
@@ -245,6 +252,7 @@ mod tests {
     #[tokio::test]
     async fn an_untyped_rejection_is_an_upstream_failure() {
         let (status, _, body) = render(ClaimError::Submission {
+            is_retry: false,
             deploy_id: "original-id".into(),
             error: node_cli::Error::NodeRejected {
                 operation: "doDeploy",
@@ -261,6 +269,7 @@ mod tests {
     #[tokio::test]
     async fn a_deploy_that_never_left_the_faucet_is_not_an_unknown_outcome() {
         let (status, _, body) = render(ClaimError::Submission {
+            is_retry: false,
             deploy_id: "original-id".into(),
             error: anyhow::Error::new(NotSubmitted::new(anyhow::anyhow!(
                 "Validator has incompatible network, shard, API version or token decimals"

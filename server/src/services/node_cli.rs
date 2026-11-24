@@ -18,9 +18,8 @@ pub struct NodeCliService {
     alerts: Arc<AlertService>,
 }
 
-/// No validator received the deploy: every configured endpoint failed its
-/// pre-submission check. This is an inventory or configuration failure, not an
-/// unknown submission outcome, and no node has the signed deploy.
+/// Every validator failed verification before submission on this attempt.
+/// A journaled deploy may have reached a validator on an earlier attempt.
 #[derive(Debug)]
 pub(crate) struct NotSubmitted(anyhow::Error);
 

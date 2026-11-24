@@ -807,10 +807,13 @@ terminal verdict. If no replacement accepts the deploy, the existing
 reservation remains intact. The API preserves typed admission and queue refusal
 codes, and passes a queue's `retry-after` hint on as the `Retry-After` header.
 An unknown outcome at any attempted validator takes precedence over a permanent
-refusal, which takes precedence over a temporary one, so the configured
-validator order never changes the reported code. When every validator fails its
-pre-verification check, nothing was submitted and the API returns
-`deploy_not_submitted` instead of an unknown outcome.
+refusal, which takes precedence over a temporary one. Within the same priority
+the first refusal determines the reported code and retry hint. Both queue-wide
+and per-deployer capacity refusals return HTTP 503 and suppress the submission
+failure alert. If every validator fails verification on the first attempt,
+the API returns `deploy_not_submitted`. On a retry of a saved claim the same
+verification failure returns `deploy_submission_unknown` because the journal
+does not establish the outcome of earlier attempts.
 
 Reservations are reconciled on the next claim. Only node-reported `Failed`,
 `Expired` or `Finalized` permit a new eligibility check; elapsed wall time,

@@ -32,6 +32,7 @@ pub enum ClaimError {
     Ineligible,
     Unavailable(anyhow::Error),
     Submission {
+        is_retry: bool,
         deploy_id: String,
         error: anyhow::Error,
     },
@@ -323,6 +324,7 @@ impl ClaimStore {
                     // Retry the journaled bytes and retain the reservation on failure.
                     node.submit(&reservation.signed).await.map_err(|error| {
                         ClaimError::Submission {
+                            is_retry: true,
                             deploy_id: reservation.deploy_id.clone(),
                             error,
                         }
@@ -355,6 +357,7 @@ impl ClaimStore {
         node.submit(&reservation.signed)
             .await
             .map_err(|error| ClaimError::Submission {
+                is_retry: false,
                 deploy_id: deploy_id.clone(),
                 error,
             })?;
@@ -377,6 +380,7 @@ mod tests {
         state: Mutex<String>,
         prepared: AtomicUsize,
         sent: Mutex<Vec<Vec<u8>>>,
+        verification_failed: AtomicBool,
         unknown: AtomicBool,
         unavailable: AtomicBool,
         delay: AtomicBool,
@@ -391,6 +395,7 @@ mod tests {
                 state: Mutex::new("Pending".into()),
                 prepared: AtomicUsize::new(0),
                 sent: Mutex::new(vec![]),
+                verification_failed: AtomicBool::new(false),
                 unknown: AtomicBool::new(false),
                 unavailable: AtomicBool::new(false),
                 delay: AtomicBool::new(false),
@@ -420,6 +425,14 @@ mod tests {
             Ok(format!("deploy{}", signed[0]))
         }
         async fn submit(&self, signed: &[u8]) -> Result<()> {
+            if self.verification_failed.load(Ordering::SeqCst) {
+                return Err(
+                    crate::services::node_cli::NotSubmitted::new(anyhow::anyhow!(
+                        "Validator unavailable during verification"
+                    ))
+                    .into(),
+                );
+            }
             self.sent.lock().unwrap().push(signed.to_vec());
             if self.delay.swap(false, Ordering::SeqCst) {
                 self.entered.notify_one();
@@ -551,6 +564,33 @@ mod tests {
         assert_eq!(fs::read(journal_path).unwrap(), saved_bytes);
         assert_eq!(node.prepared.load(Ordering::SeqCst), 1);
         assert_eq!(*node.sent.lock().unwrap(), vec![vec![1]; 3]);
+    }
+
+    #[tokio::test]
+    async fn failed_retry_verification_preserves_an_earlier_unknown_outcome() {
+        use axum::response::IntoResponse;
+
+        let directory = Directory::new();
+        let node = FakeNode::new();
+        node.unknown.store(true, Ordering::SeqCst);
+        for retry in [false, true] {
+            node.verification_failed.store(retry, Ordering::SeqCst);
+            let store = directory.store("network").await;
+            let error = store
+                .claim(&node, "recipient", &amount(), &amount())
+                .await
+                .unwrap_err();
+            let response = error.into_response();
+            assert_eq!(response.status(), axum::http::StatusCode::BAD_GATEWAY);
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(body["error"], "deploy_submission_unknown");
+            assert_eq!(body["deploy_id"], "deploy1");
+        }
+        assert_eq!(node.prepared.load(Ordering::SeqCst), 1);
+        assert_eq!(*node.sent.lock().unwrap(), vec![vec![1]]);
     }
 
     #[tokio::test]

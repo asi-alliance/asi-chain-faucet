@@ -124,22 +124,23 @@ seconds.
 |---|---|---|
 | 503 | `deploy_pool_busy`, `deploy_admission_busy`, `invalid_deploy_window` | Temporary admission refusal |
 | 503 | `deploy_queue_full` (queue full), `node_unavailable`, `deploy_queue_stopped` | Queue capacity or availability refusal |
-| 502 | `deploy_queue_full` (deployer share full) | Queue holds too many of the faucet's deploys |
+| 503 | `deploy_queue_full` (deployer share full) | Queue holds too many of the faucet's deploys |
 | 502 | `deploy_too_large`, `deploy_expired` | Admission refused for the signed deploy |
 | 502 | `deploy_rejected` | Explicit untyped node rejection |
-| 503 | `deploy_not_submitted` | No configured validator passed its pre-submission check; nothing was sent |
+| 503 | `deploy_not_submitted` | No validator passed verification on the first submission attempt |
 | 502 | `deploy_submission_unknown` | No validator confirmed acceptance. Check the returned ID before retrying. |
 
-A deploy queue reports a full queue and a full per-deployer share with the same
-`deploy_queue_full` code. A full queue is the 503 refusal that can clear; a
-share-full refusal is a 502 that keeps the reservation and alerts, because the
-queue already holds too many of the faucet's deploys. A `503` refusal can clear
-for a later request, while a `502` refusal means the validators that answered
-cannot accept these bytes. The faucet never re-signs a journaled deploy.
+Queue capacity and per-deployer capacity both return HTTP 503 with
+`deploy_queue_full`. Both are temporary refusals and suppress the submission
+failure alert. The node's message in `details` identifies the limit reached.
 
-When several validators refuse, the response reports the most consequential
-outcome: an unknown submission outranks a permanent refusal, which outranks a
-temporary one. Validator order never changes the code.
+Within one request, an unknown submission takes precedence over a permanent
+refusal, which takes precedence over a temporary one. Among refusals of equal
+priority the faucet returns the first one encountered, including its retry hint.
+A refusal describes the current attempt. If verification fails on every
+validator while retrying a saved claim, the faucet returns
+`deploy_submission_unknown` because an earlier submission may have succeeded.
+Use the original `deploy_id` to check its status.
 
 **Validation Rules:**
 
