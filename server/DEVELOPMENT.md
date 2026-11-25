@@ -67,10 +67,8 @@ cd asi-chain-faucet/server
 ```
 
 The backend uses [asi-alliance/asi-chain-client, branch `rust-dev`](https://github.com/asi-alliance/asi-chain-client/tree/rust-dev)
-as a Cargo git dependency pinned to `dd1f182837b7c51648834fcbf88c797dd677b581`,
-the commit that merged [rust-client PR #86](https://github.com/F1R3FLY-io/rust-client/pull/86) into upstream `dev`.
-Cargo fetches it automatically; `Cargo.lock` records the exact Git source.
-Node protocol dependencies remain at `0ccc315d84b32d668e8db49cd56ba3c576693e15`.
+at the revision in [Cargo.toml](Cargo.toml). Cargo fetches the client automatically.
+[Cargo.lock](Cargo.lock) records the exact client and node protocol revisions.
 Phlo prices are positive uint256 values and are encoded as 32-byte protobuf values.
 
 2. **Create configuration file:**

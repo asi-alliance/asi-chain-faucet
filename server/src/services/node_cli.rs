@@ -1057,10 +1057,13 @@ mod claim_tests {
 
     #[tokio::test]
     async fn cross_origin_claim_reads_the_queue_refusal_and_wait() {
-        // Older queues provide the cause in their message and the wait in metadata.
+        // Metadata takes precedence even if the message suggests a per-deployer limit.
         let mut refusal = tonic::Status::resource_exhausted(
-            "deploy queue is full: the signed deploys the queue holds fill its storage budget",
+            "deploy queue is full for this deployer: limit reached",
         );
+        refusal
+            .metadata_mut()
+            .insert("cause", "storage".parse().unwrap());
         refusal
             .metadata_mut()
             .insert("retry-after", "7".parse().unwrap());

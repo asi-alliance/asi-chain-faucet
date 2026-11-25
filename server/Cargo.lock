@@ -812,7 +812,7 @@ checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 [[package]]
 name = "crypto"
 version = "0.1.0"
-source = "git+https://github.com/F1R3FLY-io/f1r3node-rust.git?rev=0ccc315d84b32d668e8db49cd56ba3c576693e15#0ccc315d84b32d668e8db49cd56ba3c576693e15"
+source = "git+https://github.com/F1R3FLY-io/f1r3node-rust.git?rev=aca631e2ed02f73170558fbc3194efa48b9f1876#aca631e2ed02f73170558fbc3194efa48b9f1876"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -2123,7 +2123,7 @@ dependencies = [
 [[package]]
 name = "models"
 version = "0.1.0"
-source = "git+https://github.com/F1R3FLY-io/f1r3node-rust.git?rev=0ccc315d84b32d668e8db49cd56ba3c576693e15#0ccc315d84b32d668e8db49cd56ba3c576693e15"
+source = "git+https://github.com/F1R3FLY-io/f1r3node-rust.git?rev=aca631e2ed02f73170558fbc3194efa48b9f1876#aca631e2ed02f73170558fbc3194efa48b9f1876"
 dependencies = [
  "crypto",
  "hex",
@@ -2197,8 +2197,8 @@ dependencies = [
 
 [[package]]
 name = "node_cli"
-version = "0.3.0"
-source = "git+https://github.com/asi-alliance/asi-chain-client.git?rev=dd1f182837b7c51648834fcbf88c797dd677b581#dd1f182837b7c51648834fcbf88c797dd677b581"
+version = "0.3.1"
+source = "git+https://github.com/asi-alliance/asi-chain-client.git?rev=2fedf97e66a56b7a0b4cce06eb546d36c221b58e#2fedf97e66a56b7a0b4cce06eb546d36c221b58e"
 dependencies = [
  "blake2",
  "bs58",
@@ -3121,7 +3121,7 @@ dependencies = [
 [[package]]
 name = "rho-pure-eval"
 version = "0.1.0"
-source = "git+https://github.com/F1R3FLY-io/f1r3node-rust.git?rev=0ccc315d84b32d668e8db49cd56ba3c576693e15#0ccc315d84b32d668e8db49cd56ba3c576693e15"
+source = "git+https://github.com/F1R3FLY-io/f1r3node-rust.git?rev=aca631e2ed02f73170558fbc3194efa48b9f1876#aca631e2ed02f73170558fbc3194efa48b9f1876"
 dependencies = [
  "imbl",
  "models",
@@ -3134,7 +3134,7 @@ dependencies = [
 [[package]]
 name = "rholang"
 version = "0.1.0"
-source = "git+https://github.com/F1R3FLY-io/f1r3node-rust.git?rev=0ccc315d84b32d668e8db49cd56ba3c576693e15#0ccc315d84b32d668e8db49cd56ba3c576693e15"
+source = "git+https://github.com/F1R3FLY-io/f1r3node-rust.git?rev=aca631e2ed02f73170558fbc3194efa48b9f1876#aca631e2ed02f73170558fbc3194efa48b9f1876"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3237,7 +3237,7 @@ dependencies = [
 [[package]]
 name = "rspace_plus_plus"
 version = "0.1.0"
-source = "git+https://github.com/F1R3FLY-io/f1r3node-rust.git?rev=0ccc315d84b32d668e8db49cd56ba3c576693e15#0ccc315d84b32d668e8db49cd56ba3c576693e15"
+source = "git+https://github.com/F1R3FLY-io/f1r3node-rust.git?rev=aca631e2ed02f73170558fbc3194efa48b9f1876#aca631e2ed02f73170558fbc3194efa48b9f1876"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -3632,7 +3632,7 @@ dependencies = [
 [[package]]
 name = "shared"
 version = "0.1.0"
-source = "git+https://github.com/F1R3FLY-io/f1r3node-rust.git?rev=0ccc315d84b32d668e8db49cd56ba3c576693e15#0ccc315d84b32d668e8db49cd56ba3c576693e15"
+source = "git+https://github.com/F1R3FLY-io/f1r3node-rust.git?rev=aca631e2ed02f73170558fbc3194efa48b9f1876#aca631e2ed02f73170558fbc3194efa48b9f1876"
 dependencies = [
  "axum",
  "bincode",
@@ -3644,6 +3644,7 @@ dependencies = [
  "http",
  "http-body-util",
  "indexmap",
+ "libc",
  "lz4_flex",
  "metrics",
  "num-bigint",
@@ -3652,6 +3653,9 @@ dependencies = [
  "serde",
  "serde_bytes",
  "serde_json",
+ "signal-hook-registry",
+ "stacker",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tokio-stream",

@@ -39,7 +39,7 @@ pub enum ClaimError {
         retry_after: Duration,
     },
     Submission {
-        is_retry: bool,
+        prior_acceptance_possible: bool,
         deploy_id: String,
         error: anyhow::Error,
     },
@@ -77,10 +77,9 @@ struct Refresh {
     cause: QueueCause,
 }
 
-enum SubmissionAttempt {
-    First,
-    RetryAfterRefusal,
-    RetryUncertain,
+enum SubmissionHistory {
+    NoPriorAcceptance,
+    PossiblyAccepted,
 }
 
 impl JournalEntry {
@@ -363,12 +362,12 @@ impl ClaimStore {
     ) -> Result<String, ClaimError> {
         // The guard stays held across eligibility, preparation and submission.
         if let Some(entry) = existing {
-            let (reservation, attempt, refresh) = match entry {
+            let (reservation, history, refresh) = match entry {
                 JournalEntry::PossiblySubmitted(reservation) => {
-                    (reservation, SubmissionAttempt::RetryUncertain, None)
+                    (reservation, SubmissionHistory::PossiblyAccepted, None)
                 }
                 JournalEntry::Refused { refused, refresh } => {
-                    (refused, SubmissionAttempt::RetryAfterRefusal, refresh)
+                    (refused, SubmissionHistory::NoPriorAcceptance, refresh)
                 }
             };
             node_cli::vault::parse_amount(&reservation.amount).map_err(anyhow::Error::from)?;
@@ -392,7 +391,7 @@ impl ClaimStore {
                         // All sends were refused. Recheck eligibility below
                         // before preparing and durably replacing the deploy.
                     } else {
-                        return Self::submit_reserved(guard, node, reservation, attempt).await;
+                        return Self::submit_reserved(guard, node, reservation, history).await;
                     }
                 }
                 ClaimStatus::Finalized(block) => {
@@ -417,17 +416,23 @@ impl ClaimStore {
             deploy_id: deploy_id.clone(),
             signed,
         };
-        Self::submit_reserved(guard, node, reservation, SubmissionAttempt::First).await
+        Self::submit_reserved(
+            guard,
+            node,
+            reservation,
+            SubmissionHistory::NoPriorAcceptance,
+        )
+        .await
     }
 
     async fn submit_reserved(
         guard: &mut ClaimGuard,
         node: &impl ClaimNode,
         reservation: Reservation,
-        attempt: SubmissionAttempt,
+        history: SubmissionHistory,
     ) -> Result<String, ClaimError> {
-        let known_unsent = !matches!(attempt, SubmissionAttempt::RetryUncertain);
-        let reservation = if known_unsent {
+        let prior_acceptance_possible = matches!(history, SubmissionHistory::PossiblyAccepted);
+        let reservation = if !prior_acceptance_possible {
             // Clear any refusal proof durably before exposing the bytes to a node.
             guard.save(reservation).await?
         } else {
@@ -438,13 +443,13 @@ impl ClaimStore {
             return Ok(deploy_id);
         };
 
-        if known_unsent {
+        if !prior_acceptance_possible {
             if let Some(entry) = JournalEntry::after_refusal(reservation, &error) {
                 guard.save(entry).await?;
             }
         }
         Err(ClaimError::Submission {
-            is_retry: !matches!(attempt, SubmissionAttempt::First),
+            prior_acceptance_possible,
             deploy_id,
             error,
         })
@@ -515,10 +520,10 @@ mod tests {
         async fn submit(&self, signed: &[u8]) -> Result<()> {
             if self.verification_failed.load(Ordering::SeqCst) {
                 return Err(
-                    crate::services::node_cli::NotSubmitted::new(anyhow::anyhow!(
-                        "Validator unavailable during verification"
+                    anyhow::Error::new(crate::services::node_cli::NotSubmitted::new(
+                        anyhow::anyhow!("Validator unavailable during verification"),
                     ))
-                    .into(),
+                    .context(ConfirmedRefusals::default()),
                 );
             }
             self.sent.lock().unwrap().push(signed.to_vec());
@@ -754,6 +759,44 @@ mod tests {
         );
         assert_eq!(*node.sent.lock().unwrap(), vec![vec![1]; 4]);
         assert_eq!(node.prepared.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn failed_verification_after_proven_refusal_remains_not_submitted() {
+        use axum::response::IntoResponse;
+
+        let directory = Directory::new();
+        let node = FakeNode::new();
+        *node.queue_refusal.lock().unwrap() = Some((
+            node_cli::DeployAdmissionReason::DeployerShareFull,
+            Duration::ZERO,
+        ));
+        let store = directory.store("network").await;
+        assert!(matches!(
+            store.claim(&node, "recipient", &amount(), &amount()).await,
+            Err(ClaimError::Submission { .. })
+        ));
+        node.verification_failed.store(true, Ordering::SeqCst);
+        for _ in 0..2 {
+            let store = directory.store("network").await;
+            let response = store
+                .claim(&node, "recipient", &amount(), &amount())
+                .await
+                .unwrap_err()
+                .into_response();
+            assert_eq!(
+                response.status(),
+                axum::http::StatusCode::SERVICE_UNAVAILABLE
+            );
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(body["error"], "deploy_not_submitted");
+            assert_eq!(body["deploy_id"], "deploy1");
+        }
+        assert_eq!(node.prepared.load(Ordering::SeqCst), 1);
+        assert_eq!(*node.sent.lock().unwrap(), vec![vec![1]]);
     }
 
     #[tokio::test]

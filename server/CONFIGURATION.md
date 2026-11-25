@@ -32,10 +32,8 @@ Balance reads retain the system-vault exploratory query and the configured
 `EXPLORATORY_RETRY_BUDGET_SEC` for observer capacity refusals.
 
 The backend uses [asi-alliance/asi-chain-client, branch `rust-dev`](https://github.com/asi-alliance/asi-chain-client/tree/rust-dev)
-as a Cargo git dependency pinned to `dd1f182837b7c51648834fcbf88c797dd677b581`,
-the commit that merged [rust-client PR #86](https://github.com/F1R3FLY-io/rust-client/pull/86) into upstream `dev`.
-Cargo fetches it automatically; `Cargo.lock` records the exact Git source.
-Node protocol dependencies remain at `0ccc315d84b32d668e8db49cd56ba3c576693e15`.
+at the revision in [Cargo.toml](Cargo.toml). Cargo fetches the client automatically.
+[Cargo.lock](Cargo.lock) records the exact client and node protocol revisions.
 Phlo prices are positive uint256 values and are encoded as 32-byte protobuf values.
 The validator and observer must support the uint256 monetary wire protocol.
 The ASI system-vault transfer ABI and exact balance query remain in use.
@@ -809,10 +807,10 @@ An unknown outcome at any attempted validator takes precedence over a permanent
 refusal, which takes precedence over a temporary one. Within the same priority
 the first refusal determines the reported code and retry hint. Both queue-wide
 and per-deployer capacity refusals return HTTP 503 and suppress the submission
-failure alert. If every validator fails verification on the first attempt,
-the API returns `deploy_not_submitted`. On a retry of a saved claim the same
-verification failure returns `deploy_submission_unknown` because the journal
-does not establish the outcome of earlier attempts.
+failure alert. If every validator fails verification, the API returns
+`deploy_not_submitted` on a first attempt or when the journal proves all
+previous attempts were refused or stopped before sending. If a previous
+attempt may have been accepted, the same failure returns `deploy_submission_unknown`.
 
 A known queue-wide capacity cause can require a fresh validity window. After
 all attempts were explicitly refused or skipped before transmission, the

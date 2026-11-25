@@ -126,15 +126,16 @@ exposes this header to cross-origin browser clients.
 | 503 | `deploy_queue_full` (deployer share full) | Queue holds too many of the faucet's deploys |
 | 502 | `deploy_too_large`, `deploy_expired` | Admission refused for the signed deploy |
 | 502 | `deploy_rejected` | Explicit untyped node rejection |
-| 503 | `deploy_not_submitted` | No validator passed verification on the first submission attempt |
+| 503 | `deploy_not_submitted` | No validator passed verification and earlier acceptance is ruled out |
 | 502 | `deploy_submission_unknown` | No validator confirmed acceptance. Check the returned ID before retrying. |
 
 Queue capacity and per-deployer capacity both return HTTP 503 with
 `deploy_queue_full`. Both are temporary refusals and suppress the submission
 failure alert. When the client recognizes the reason, the optional JSON field
 `cause` is one of `validator`, `validator_idle`, `shard`, `storage`, or
-`deployer_share`. Unrecognized causes are omitted. The pinned client recognizes
-the queue messages used by older queues and node #1123.
+`deployer_share`. For a capacity refusal, the client reads the gRPC `cause`
+metadata first. A new, unrecognized value leaves the JSON cause absent.
+Missing, empty or unreadable metadata falls back to the older queue messages.
 
 When only the per-deployer limit is reached, the faucet retries the signed
 bytes. If any queue reports one of the other four known causes, the faucet may
@@ -149,8 +150,9 @@ refusal, which takes precedence over a temporary one. Among refusals of equal
 priority the faucet returns the first one encountered, including its retry hint.
 A refusal describes the current attempt. If verification fails on every
 validator while retrying a saved claim, the faucet returns
-`deploy_submission_unknown` because an earlier submission may have succeeded.
-Use the original `deploy_id` to check its status.
+`deploy_submission_unknown` when an earlier submission may have succeeded.
+On an unknown submission outcome, the web UI fills the TX status check with
+the original `deploy_id` and shows the transfer error.
 
 **Validation Rules:**
 

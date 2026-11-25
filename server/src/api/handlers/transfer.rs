@@ -81,8 +81,11 @@ impl IntoResponse for ClaimError {
             ClaimError::Submission {
                 deploy_id,
                 error,
-                is_retry,
-            } => return SubmissionError::classify(deploy_id, &error, is_retry).into_response(),
+                prior_acceptance_possible,
+            } => {
+                return SubmissionError::classify(deploy_id, &error, prior_acceptance_possible)
+                    .into_response()
+            }
         };
         (
             status,
@@ -104,7 +107,7 @@ struct SubmissionError {
 }
 
 impl SubmissionError {
-    fn classify(deploy_id: String, error: &anyhow::Error, is_retry: bool) -> Self {
+    fn classify(deploy_id: String, error: &anyhow::Error, prior_acceptance_possible: bool) -> Self {
         let (status, code, details, retry_after) = match error.downcast_ref::<node_cli::Error>() {
             Some(node_cli::Error::DeployAdmissionRefused {
                 reason,
@@ -128,11 +131,11 @@ impl SubmissionError {
                 message.clone(),
                 None,
             ),
-            // Only the first attempt can establish that these bytes were never sent.
-            _ if !is_retry && error.downcast_ref::<NotSubmitted>().is_some() => (
+            // A pre-send failure is conclusive if every earlier attempt was also refused or unsent.
+            _ if !prior_acceptance_possible && error.downcast_ref::<NotSubmitted>().is_some() => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 "deploy_not_submitted",
-                "No validator accepted the deploy for submission; nothing was sent. The saved claim remains reserved.".into(),
+                "No validator passed verification for this attempt. The saved claim remains reserved.".into(),
                 None,
             ),
             _ => (
@@ -219,7 +222,7 @@ mod tests {
             ),
         ] {
             let (status, headers, body) = render(ClaimError::Submission {
-                is_retry: false,
+                prior_acceptance_possible: false,
                 deploy_id: "original-id".into(),
                 error: node_cli::Error::DeployAdmissionRefused {
                     deploy_id: "original-id".into(),
@@ -251,7 +254,7 @@ mod tests {
             (QueueFull, None, None),
         ] {
             let (_, _, body) = render(ClaimError::Submission {
-                is_retry: false,
+                prior_acceptance_possible: false,
                 deploy_id: "id".into(),
                 error: node_cli::Error::DeployAdmissionRefused {
                     deploy_id: "id".into(),
@@ -273,7 +276,7 @@ mod tests {
     #[tokio::test]
     async fn a_queue_retry_hint_becomes_a_retry_after_header() {
         let (status, headers, body) = render(ClaimError::Submission {
-            is_retry: false,
+            prior_acceptance_possible: false,
             deploy_id: "original-id".into(),
             error: node_cli::Error::DeployAdmissionRefused {
                 deploy_id: "original-id".into(),
@@ -293,7 +296,7 @@ mod tests {
     #[tokio::test]
     async fn unknown_submission_returns_the_original_id() {
         let (status, _, body) = render(ClaimError::Submission {
-            is_retry: false,
+            prior_acceptance_possible: false,
             deploy_id: "original-id".into(),
             error: anyhow::anyhow!("Transport error"),
         })
@@ -306,7 +309,7 @@ mod tests {
     #[tokio::test]
     async fn an_untyped_rejection_is_an_upstream_failure() {
         let (status, _, body) = render(ClaimError::Submission {
-            is_retry: false,
+            prior_acceptance_possible: false,
             deploy_id: "original-id".into(),
             error: node_cli::Error::NodeRejected {
                 operation: "doDeploy",
@@ -323,7 +326,7 @@ mod tests {
     #[tokio::test]
     async fn a_deploy_that_never_left_the_faucet_is_not_an_unknown_outcome() {
         let (status, _, body) = render(ClaimError::Submission {
-            is_retry: false,
+            prior_acceptance_possible: false,
             deploy_id: "original-id".into(),
             error: anyhow::Error::new(NotSubmitted::new(anyhow::anyhow!(
                 "Validator has incompatible network, shard, API version or token decimals"

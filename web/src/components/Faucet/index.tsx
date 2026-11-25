@@ -1,7 +1,7 @@
 import AddressBalance from "@components/AddressBalance";
 import LoaderWithLabel from "@components/LoaderWithLabel";
 import { useFaucetTransactions } from "@context/FaucetTransactionsContext";
-import { faucetTokens, getBalance, getMonetaryConfig } from "@api/index";
+import { faucetTokens, getBalance, getMonetaryConfig, SubmissionUnknownError } from "@api/index";
 import { formatDisplayAtomic, isEligible } from "@utils/amounts";
 import ValidationMessagesList, {
     TValidationMessage,
@@ -121,6 +121,10 @@ const Faucet = ({ address }: IFaucetProps): ReactElement => {
             setFaucetPhase(FaucetPhases.COMPLETED);
         } catch (error) {
             console.error(error);
+
+            if (error instanceof SubmissionUnknownError) {
+                setLastTransactionHash(error.deployId);
+            }
 
             const message =
                 error instanceof Error
