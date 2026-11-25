@@ -72,14 +72,12 @@ The ASI Chain Faucet consists of two main components working together to provide
 ### Running the Backend
 
 The backend uses [asi-alliance/asi-chain-client, branch `rust-dev`](https://github.com/asi-alliance/asi-chain-client/tree/rust-dev)
-as a Cargo git dependency pinned to `9292f5433b4d727d9a226f2f5766dfd088e14948`.
-Cargo fetches it automatically; `Cargo.lock` records the exact Git source.
-Node protocol dependencies remain at `0ccc315d84b32d668e8db49cd56ba3c576693e15`.
+at the revision in [Cargo.toml](server/Cargo.toml). Cargo fetches the client automatically.
+[Cargo.lock](server/Cargo.lock) records the exact client and node protocol revisions.
 Phlo prices are positive uint256 values and are encoded as 32-byte protobuf values.
 
 This revision supplies the exact-integer API decoding and phlo-price signing
-required by the target node. Integration into the client's `dev` branch and a
-subsequent revision update require a separate compatibility check.
+required by the target node. It also reads queue capacity causes from gRPC metadata.
 
 ```bash
 # Clone the repository

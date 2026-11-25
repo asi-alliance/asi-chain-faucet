@@ -4,7 +4,7 @@ use crate::{
     AppState,
 };
 use axum::http::{
-    header::{AUTHORIZATION, CONTENT_TYPE},
+    header::{AUTHORIZATION, CONTENT_TYPE, RETRY_AFTER},
     Method, StatusCode,
 };
 use axum::{
@@ -39,6 +39,7 @@ pub fn create_router(state: AppState) -> Router {
         .allow_origin(Any)
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
         .allow_headers([CONTENT_TYPE, AUTHORIZATION])
+        .expose_headers([RETRY_AFTER])
         .max_age(Duration::from_secs(60 * 60));
 
     let api_routes = Router::new()
@@ -58,8 +59,9 @@ pub fn create_router(state: AppState) -> Router {
             get(balance_handler).options(preflight),
         );
 
-    // Let exploratory retries and submission finish within the node client's
-    // bounded requests instead of cancelling them at the old seven-second limit.
+    // Balance and transfer operations use bounded node-client requests. An
+    // outer deadline would cut off exploratory retries or cancel submission
+    // before the handler can return the original signed ID on an unknown outcome.
     api_routes
         .layer(cors)
         .layer(RequestBodyLimitLayer::new(1024 * 1024))

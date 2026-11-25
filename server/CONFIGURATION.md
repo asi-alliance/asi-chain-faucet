@@ -32,9 +32,8 @@ Balance reads retain the system-vault exploratory query and the configured
 `EXPLORATORY_RETRY_BUDGET_SEC` for observer capacity refusals.
 
 The backend uses [asi-alliance/asi-chain-client, branch `rust-dev`](https://github.com/asi-alliance/asi-chain-client/tree/rust-dev)
-as a Cargo git dependency pinned to `9292f5433b4d727d9a226f2f5766dfd088e14948`.
-Cargo fetches it automatically; `Cargo.lock` records the exact Git source.
-Node protocol dependencies remain at `0ccc315d84b32d668e8db49cd56ba3c576693e15`.
+at the revision in [Cargo.toml](Cargo.toml). Cargo fetches the client automatically.
+[Cargo.lock](Cargo.lock) records the exact client and node protocol revisions.
 Phlo prices are positive uint256 values and are encoded as 32-byte protobuf values.
 The validator and observer must support the uint256 monetary wire protocol.
 The ASI system-vault transfer ABI and exact balance query remain in use.
@@ -777,9 +776,9 @@ old namespace and must only be done when switching chains.
 Admission locks each network/recipient before reading balance. The exact signed
 deploy, its ID and distribution amount are atomically journaled and fsynced
 before submission. Concurrent requests return 409 while that lock is held.
-Pending retries return the existing ID and may resubmit the **same signed
-bytes**. An uncertain submission still returns that ID for status polling;
-it never opens another claim. Restart and cancellation retain the journal.
+Pending retries may resubmit the **same signed bytes**. Success or submission
+failure includes the existing deploy ID for status polling. The journal
+retains the reservation across submission failures, restart and cancellation.
 The saved gRPC endpoint is tried first when the current `NODE_HOSTS`,
 `NODE_GRPC_PORTS` and `NODE_HTTP_PORTS` inventory maps it to one HTTP port.
 If the service cannot verify the saved endpoint or submit the deploy there,
@@ -798,16 +797,35 @@ be verified, recovery fails closed. Keep the observer on the original chain
 when rotating validators. `FAUCET_NETWORK_ID` is a local journal namespace,
 not a substitute for the node's network ID.
 
-Every submission sends the original signed deploy with the original ID;
-amount, fees and validity fields are never regenerated. A replacement still
-applies its admission rules, including its minimum Phlo price. A submission
+Failover within a submission sends identical signed bytes to each validator.
+Each validator applies its admission rules, including its minimum Phlo price. A submission
 error, including a gRPC error or node rejection, is not treated as a canonical
 terminal verdict. If no replacement accepts the deploy, the existing
-reservation remains intact.
+reservation remains intact. The API preserves typed admission and queue refusal
+codes, and passes a queue's `retry-after` hint on as the `Retry-After` header.
+An unknown outcome at any attempted validator takes precedence over a permanent
+refusal, which takes precedence over a temporary one. Within the same priority
+the first refusal determines the reported code and retry hint. Both queue-wide
+and per-deployer capacity refusals return HTTP 503 and suppress the submission
+failure alert. If every validator fails verification, the API returns
+`deploy_not_submitted` on a first attempt or when the journal proves all
+previous attempts were refused or stopped before sending. If a previous
+attempt may have been accepted, the same failure returns `deploy_submission_unknown`.
 
-Reservations are reconciled on the next claim. Only node-reported `Failed`,
-`Expired` or `Finalized` permit a new eligibility check; elapsed wall time,
-missing status, observer failures and malformed journals never release a claim.
+A known queue-wide capacity cause can require a fresh validity window. After
+all attempts were explicitly refused or skipped before transmission, the
+faucet can persist a refusal record with the signed reservation under
+`refused` and the earliest fresh-signing time under `refresh.after`. A retry
+after that time checks the balance again and journals a newly prepared deploy
+before sending. The per-deployer limit and an unknown cause keep the same bytes.
+Before a resend, the faucet durably replaces the refusal record with the
+ordinary reservation. A crash during sending, a lost response or an existing
+legacy reservation therefore keeps the original ID across subsequent refusals.
+Older faucet versions fail closed when reading the new refusal record.
+
+Reservations that could have been submitted require a node-reported `Failed`,
+`Expired` or `Finalized` to permit a new eligibility check. Elapsed time,
+missing status, observer failures and malformed journals preserve such claims.
 For `Finalized`, reconciliation uses the observer HTTP balance API to verify
 the inclusion block and then read the current finalized balance at a height
 at least as high as inclusion. This permits later claims after spending while
@@ -830,7 +848,13 @@ Initial balance reads retain the exploratory API and its
 configured capacity retry budget. New admission returns 400 if ineligible,
 or 503 if reconciliation/storage is unavailable. Status is queried when a
 client polls a deploy or retries a claim. There is no background polling,
-and elapsed time never clears a reservation.
+and elapsed time never clears a reservation. A queue-local rejection remains
+reserved because another validator may have accepted the same deploy. Observing
+one while polling or reconciling raises the `DeployFailed` alert. When the
+observer reports `Pending` without an inclusion block, the faucet probes
+configured validator HTTP endpoints for `Rejected`, up to four concurrently
+within a shared two-second budget. Failed probes leave the observer result
+intact. Only the observer supplies canonical finality and balances.
 
 
 When upgrading an existing installation, explicitly set `FAUCET_AMOUNT=10000`
@@ -851,13 +875,22 @@ the procedure below instead of assuming a restart changes the pending deploy.
 
 ### Inspecting and recovering a stuck reservation
 
-A pending reservation keeps the recipient reserved. HTTP 200 from
-`/transfer` with the same deploy ID acknowledges that reservation; it does not
-prove submission or a successful transfer. Time alone is never proof that a
-deploy cannot execute.
+A pending reservation keeps the recipient reserved. HTTP 200 from `/transfer`
+confirms submission, and a submission error also includes the saved deploy ID.
+Use the observer to establish whether the transfer finalized. Time alone is
+never proof that a deploy cannot execute.
+
+A deploy queue's `Rejected` verdict is terminal for that queue only: the same
+signed deploy may still be finalized elsewhere, so the reservation is not
+released. Reconciliation raises the `DeployFailed` alert when it observes one.
+If no validator finalizes the deploy, the recipient stays reserved until this
+procedure removes the journal entry. Prepared deploys set no explicit
+expiration, so a signed deploy stops being admissible only after the node's
+deploy lifespan passes its `validAfterBlockNumber`.
 
 1. Identify the recipient and deploy ID from the claim response or error log.
    Files live at `FAUCET_CLAIMS_DIR/<hex-encoded FAUCET_NETWORK_ID>/<address>.json`.
+   For refusal records, inspect the reservation under `refused`.
    Inspect `deploy_id` and `amount` (atomic units). `signed` holds
    the serialized prepared transfer, including the original validator endpoint
    and exact signed deploy bytes, plus a chain/protocol identity snapshot in

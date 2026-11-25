@@ -6,7 +6,7 @@ use crate::{
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::Json,
+    response::{IntoResponse, Json},
 };
 use node_cli::vault::validate_address;
 use tracing::{error, info};
@@ -22,6 +22,7 @@ pub async fn balance_handler(
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse::validation_error(&e.to_string())),
         )
+            .into_response()
     })?;
 
     let node_cli_service = NodeCliService::new(state.config.clone(), state.alerts.clone());
@@ -41,7 +42,8 @@ pub async fn balance_handler(
                     "FAUCET: Balance retrieval failed".to_string(),
                     Some(e.to_string()),
                 )),
-            ))
+            )
+                .into_response())
         }
     }
 }

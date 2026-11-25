@@ -71,9 +71,22 @@ Content-Type: application/json
 
 | Field | Type | Description |
 |-------|------|-------------|
-| deploy_id | string | Signed deploy ID (100-160 characters); pending retries return the existing ID |
+| deploy_id | string | Signed deploy ID (100-160 characters); reused while a previous submission could still land |
 
 **Error Responses:**
+
+Every error body has the shape below. `error` carries a machine code from the
+table in "Submission errors"; other failures use a human-readable message.
+`details` may be `null`, and `deploy_id` is omitted when it does not apply.
+
+```json
+{
+  "error": "deploy_pool_busy",
+  "details": "deploy_pool_busy: the deploy pool would exceed its configured limit. Retry later or submit to another validator.",
+  "timestamp": "2025-10-29T12:34:56.789Z",
+  "deploy_id": "3045022100..."
+}
+```
 
 Invalid address format (400 Bad Request):
 ```json
@@ -101,6 +114,45 @@ Claim reconciliation, preparation or journal storage unavailable (503 Service Un
   "timestamp": "2025-10-29T12:34:56.789Z"
 }
 ```
+
+Submission errors carry the original `deploy_id` and keep its reservation.
+The API returns queue retry hints in seconds in the `Retry-After` header and
+exposes this header to cross-origin browser clients.
+
+| HTTP | Error code | Meaning |
+|---|---|---|
+| 503 | `deploy_pool_busy`, `deploy_admission_busy`, `invalid_deploy_window` | Temporary admission refusal |
+| 503 | `deploy_queue_full` (queue full), `node_unavailable`, `deploy_queue_stopped` | Queue capacity or availability refusal |
+| 503 | `deploy_queue_full` (deployer share full) | Queue holds too many of the faucet's deploys |
+| 502 | `deploy_too_large`, `deploy_expired` | Admission refused for the signed deploy |
+| 502 | `deploy_rejected` | Explicit untyped node rejection |
+| 503 | `deploy_not_submitted` | No validator passed verification and earlier acceptance is ruled out |
+| 502 | `deploy_submission_unknown` | No validator confirmed acceptance. Check the returned ID before retrying. |
+
+Queue capacity and per-deployer capacity both return HTTP 503 with
+`deploy_queue_full`. Both are temporary refusals and suppress the submission
+failure alert. When the client recognizes the reason, the optional JSON field
+`cause` is one of `validator`, `validator_idle`, `shard`, `storage`, or
+`deployer_share`. For a capacity refusal, the client reads the gRPC `cause`
+metadata first. A new, unrecognized value leaves the JSON cause absent.
+Missing, empty or unreadable metadata falls back to the older queue messages.
+
+When only the per-deployer limit is reached, the faucet retries the signed
+bytes. If any queue reports one of the other four known causes, the faucet may
+return a new ID after the longest wait from the refusing validators, provided
+the journal proves that every attempt was refused or stopped before sending.
+Early retries receive
+503 with the remaining wait and original ID. The faucet checks eligibility
+again before signing. Any uncertain submission retains the original bytes.
+
+Within one request, an unknown submission takes precedence over a permanent
+refusal, which takes precedence over a temporary one. Among refusals of equal
+priority the faucet returns the first one encountered, including its retry hint.
+A refusal describes the current attempt. If verification fails on every
+validator while retrying a saved claim, the faucet returns
+`deploy_submission_unknown` when an earlier submission may have succeeded.
+On an unknown submission outcome, the web UI fills the TX status check with
+the original `deploy_id` and shows the transfer error.
 
 **Validation Rules:**
 
@@ -267,7 +319,7 @@ GET /deploy/<deploy_id-returned-by-transfer> HTTP/1.1
 |--------|-------------|
 | Deploying | Observer reports `Pending`, including deploys it has not yet seen |
 | Finalized | Observer reports canonical finalization and no execution or vault-transfer error was found in available detail |
-| DeployError | Execution failure, expiry, or a rejected vault transfer |
+| DeployError | Execution failure, expiry, vault transfer rejection or deploy queue rejection |
 | Unknown | Observer returned an unrecognized finalization state |
 
 **Error Responses:**
@@ -403,14 +455,19 @@ the pre-claim ceiling. The response contains no signing or service credentials.
 `GET /config` also returns `"eligibility_policy":"strict_pre_claim_threshold"`.
 The balance before claiming must be strictly below the atomic ceiling; the
 resulting balance may exceed it. Only one deploy per network/recipient may be
-pending. `POST /transfer` retries resume the existing signed deploy and return
-its ID, including after an uncertain submission or service restart.
+pending. The journal retains the submission outcome across restart. Each
+`POST /transfer` response for a submission includes the affected deploy ID.
 
 A concurrent active request returns 409 (retry shortly). Reconciliation or
 journal failures return 503 and preserve existing reservations. Node-reported
-terminal states are reconciled before admitting another distribution; finalized
-claims require an updated finalized balance. See CONFIGURATION.md for required
-persistent storage and network namespace settings.
+canonical terminal states are reconciled before admitting another distribution.
+Finalized claims require an updated finalized balance. When the observer reports
+`Pending` without an inclusion block, the faucet checks configured validator
+HTTP endpoints for queue-local rejections. A queue-local rejection
+leaves the reservation in place and raises an operator alert; it clears only if
+another validator finalizes the deploy or the reservation is removed with the
+manual procedure. See CONFIGURATION.md for required persistent storage and
+network namespace settings.
 
 The backend does not poll reservations in the background or release them on a
 timer. Closing the browser or ending a polling session does not cancel the

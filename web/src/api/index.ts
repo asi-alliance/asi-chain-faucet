@@ -34,6 +34,15 @@ export const getBalance = async (walletAddress: string): Promise<string> => {
     return data?.balance;
 };
 
+export class SubmissionUnknownError extends Error {
+    readonly deployId: string;
+
+    constructor(message: string, deployId: string) {
+        super(message);
+        this.deployId = deployId;
+    }
+}
+
 export const faucetTokens = async (walletAddress: string): Promise<string> => {
     const response = await fetch(`${BASE_URL}/transfer`, {
         method: "POST",
@@ -49,9 +58,12 @@ export const faucetTokens = async (walletAddress: string): Promise<string> => {
     const data = await response.json();
 
     if (!response.ok) {
-        throw new Error(
-            `Error on faucet: ${data?.details || response.statusText}`
-        );
+        const message = data?.details || response.statusText;
+        if (data?.error === "deploy_submission_unknown" &&
+            typeof data.deploy_id === "string" && data.deploy_id.trim()) {
+            throw new SubmissionUnknownError(message, data.deploy_id);
+        }
+        throw new Error(`Error on faucet: ${message}`);
     }
 
     return data?.deploy_id;
