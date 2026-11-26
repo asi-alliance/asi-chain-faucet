@@ -41,6 +41,7 @@ pub struct AppConfig {
     pub node_hosts_display: Arc<str>,
 
     pub observer_host: String,
+    pub observer_grpc_host: Option<String>,
     pub observer_grpc_port: u16,
     pub observer_http_port: u16,
 
@@ -98,6 +99,7 @@ impl AppConfig {
             node_hosts_display,
 
             observer_host: env::var("OBSERVER_HOST").unwrap_or_else(|_| "localhost".to_string()),
+            observer_grpc_host: Self::parse_env_non_empty("OBSERVER_GRPC_HOST"),
             observer_grpc_port: Self::parse_env_or("OBSERVER_GRPC_PORT", 40452),
             observer_http_port: Self::parse_env_or("OBSERVER_HTTP_PORT", 40453),
 

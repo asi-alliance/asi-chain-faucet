@@ -223,6 +223,14 @@ FAUCET_MAX_BALANCE=20000  # Addresses with 20,000+ ASI are ineligible
 
 ---
 
+#### OBSERVER_GRPC_HOST
+
+Set the optional `OBSERVER_GRPC_HOST` to send exploratory reads to a different host.
+It defaults to `OBSERVER_HOST`. For example, set `OBSERVER_HOST` to a trusted
+HTTP observer pool, `OBSERVER_HTTP_PORT` to its listener port and
+`OBSERVER_GRPC_HOST` to a direct observer. Every target must serve the same
+chain and genesis. With a single host, both protocols depend on that host.
+
 #### OBSERVER_GRPC_PORT
 
 ```bash
@@ -844,8 +852,13 @@ is unavailable or unsupported. A 404 is reported as an error when querying
 deploy status and fails existing-claim reconciliation with HTTP 503, keeping
 the reservation rather than masquerading as `Pending`.
 Inability to verify finalized balances also keeps the reservation.
-Initial balance reads retain the exploratory API and its
-configured capacity retry budget. New admission returns 400 if ineligible,
+Initial balance reads use the exploratory API with its configured capacity retry
+budget. A transport failure, unavailable service, deadline or unimplemented RPC
+triggers one HTTP read at the latest finalized block. This applies to both
+`GET /balance/{address}` and initial claim eligibility. Other gRPC errors and
+invalid amounts remain errors. If the HTTP response fails validation or both
+endpoints are unavailable, the balance check fails and admission stops.
+New admission returns 400 if ineligible,
 or 503 if reconciliation/storage is unavailable. Status is queried when a
 client polls a deploy or retries a claim. There is no background polling,
 and elapsed time never clears a reservation. A queue-local rejection remains

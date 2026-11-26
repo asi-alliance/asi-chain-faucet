@@ -423,20 +423,40 @@ impl NodeCliService {
     }
 
     pub async fn get_balance(&self, address: &str) -> Result<String> {
-        self.balance_at(address, None).await
-    }
-
-    async fn balance_at(&self, address: &str, block: Option<&str>) -> Result<String> {
         let rholang_query = build_balance_query(address)?;
+        let host = self
+            .config
+            .observer_grpc_host
+            .as_deref()
+            .unwrap_or(&self.config.observer_host);
         let api = F1r3flyApi::new(Endpoint::parse(&format!(
-            "http://{}:{}",
-            self.config.observer_host, self.config.observer_grpc_port
+            "http://{host}:{}",
+            self.config.observer_grpc_port
         ))?)?
         .with_exploratory_retry_budget(Duration::from_secs(
             self.config.exploratory_retry_budget_sec,
         ));
-        let result = api.exploratory_deploy(&rholang_query, block, false).await?;
-        Ok(result.value()?.as_amount()?.to_string())
+        match api.exploratory_deploy(&rholang_query, None, false).await {
+            Ok(result) => Ok(result.value()?.as_amount()?.to_string()),
+            Err(error) if grpc_balance_unavailable(&error) => {
+                warn!(%error, "Observer gRPC balance unavailable, reading finalized balance over HTTP");
+                let balance = self
+                    .observer()?
+                    .balance(address, None)
+                    .await
+                    .context("Observer HTTP balance fallback failed")?;
+                anyhow::ensure!(
+                    balance.address == address,
+                    "Observer returned another address"
+                );
+                anyhow::ensure!(
+                    !balance.block.hash.is_empty() && balance.block.number >= 0,
+                    "Observer returned invalid finalized block metadata"
+                );
+                Ok(balance.dust.to_string())
+            }
+            Err(error) => Err(error.into()),
+        }
     }
 
     pub async fn get_deploy_info(&self, id: String) -> Result<DeployInfo> {
@@ -561,6 +581,17 @@ fn build_balance_query(address: &str) -> node_cli::Result<String> {
     ))
 }
 
+fn grpc_balance_unavailable(error: &node_cli::Error) -> bool {
+    match error {
+        node_cli::Error::Transport { .. } => true,
+        node_cli::Error::Grpc { status, .. } => matches!(
+            status.code(),
+            tonic::Code::Unavailable | tonic::Code::DeadlineExceeded | tonic::Code::Unimplemented
+        ),
+        _ => false,
+    }
+}
+
 fn deploy_failure(detail: &serde_json::Value) -> (Option<String>, bool) {
     let errored = detail
         .get("errored")
@@ -606,7 +637,7 @@ impl crate::services::claims::ClaimNode for NodeCliService {
             );
             return Ok(current.dust.to_string());
         }
-        self.balance_at(address, None).await
+        self.get_balance(address).await
     }
     async fn prepare(&self, address: &str) -> Result<Vec<u8>> {
         self.prepare_transfer(address).await
@@ -754,6 +785,17 @@ mod claim_tests {
         message
     }
 
+    fn grpc_response(message: Vec<u8>) -> axum::response::Response {
+        let mut frame = vec![0];
+        frame.extend_from_slice(&(message.len() as u32).to_be_bytes());
+        frame.extend(message);
+        axum::http::Response::builder()
+            .header("content-type", "application/grpc")
+            .header("grpc-status", "0")
+            .body(axum::body::Body::from(frame))
+            .unwrap()
+    }
+
     impl TestValidator {
         async fn start(status: serde_json::Value, answer: Result<String, tonic::Code>) -> Self {
             // DeployResponse.result is protobuf field 2 (a string).
@@ -799,16 +841,7 @@ mod claim_tests {
                         );
                         requests.lock().unwrap().push(body[5..].to_vec());
                         match answer {
-                            Ok(message) => {
-                                let mut frame = vec![0];
-                                frame.extend_from_slice(&(message.len() as u32).to_be_bytes());
-                                frame.extend(message);
-                                axum::http::Response::builder()
-                                    .header("content-type", "application/grpc")
-                                    .header("grpc-status", "0")
-                                    .body(axum::body::Body::from(frame))
-                                    .unwrap()
-                            }
+                            Ok(message) => grpc_response(message),
                             Err(status) => status.into_http(),
                         }
                     }
@@ -1489,6 +1522,118 @@ mod claim_tests {
             matches!(ClaimNode::status(&node, &"a".repeat(128)).await.unwrap(), ClaimStatus::Finalized(block) if block == "abcd")
         );
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn direct_grpc_balance_succeeds_while_http_pool_is_offline() {
+        // Return one Par containing Expr.g_int = 42 (sint64 zigzag encoding).
+        let par = protobuf_bytes(5, &[0x10, 84]);
+        let mut result = protobuf_bytes(1, &par);
+        result.extend(protobuf_bytes(2, &protobuf_bytes(1, b"abcd")));
+        let message = protobuf_bytes(2, &result);
+        let grpc = Router::new().fallback(move || async move { grpc_response(message) });
+        let (port, server) = serve(grpc).await;
+        let mut config = AppConfig::from_env().unwrap();
+        config.observer_host = "127.0.0.2".into();
+        config.observer_http_port = port;
+        config.observer_grpc_host = Some("127.0.0.1".into());
+        config.observer_grpc_port = port;
+        let node = NodeCliService::new(config.clone(), AlertService::new(&config));
+        assert_eq!(
+            node.get_balance("1111222222222222222222222222222222222222")
+                .await
+                .unwrap(),
+            "42"
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn unavailable_grpc_uses_exact_http_balance_for_lookup_and_admission() {
+        const ADDRESS: &str = "1111222222222222222222222222222222222222";
+        const WIDE: &str = "340282366920938463463374607431768211456";
+        let body = |address: &str, balance: &str| {
+            serde_json::json!({
+                "address": address, "balance": balance, "blockHash": "abcd", "blockNumber": 12
+            })
+        };
+        for (reply, expected) in [
+            (body(ADDRESS, WIDE), Some(WIDE)),
+            (body(ADDRESS, "0"), Some("0")),
+            (body("another-address", "0"), None),
+            (body(ADDRESS, "-1"), None),
+            (
+                serde_json::json!({"address": ADDRESS, "balance": "0"}),
+                None,
+            ),
+        ] {
+            let app = Router::new().route(
+                "/api/balance/{address}",
+                get(move || async move { Json(reply) }),
+            );
+            let (port, http) = serve(app).await;
+            let mut config = AppConfig::from_env().unwrap();
+            config.observer_host = "127.0.0.1".into();
+            config.observer_http_port = port;
+            // The HTTP listener is bound only to 127.0.0.1.
+            config.observer_grpc_host = Some("127.0.0.2".into());
+            config.observer_grpc_port = port;
+            let node = NodeCliService::new(config.clone(), AlertService::new(&config));
+            assert_eq!(node.get_balance(ADDRESS).await.ok().as_deref(), expected);
+            assert_eq!(
+                ClaimNode::balance(&node, ADDRESS, None)
+                    .await
+                    .ok()
+                    .as_deref(),
+                expected
+            );
+            http.abort();
+            http.await.unwrap_err();
+            assert!(node.get_balance(ADDRESS).await.is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn only_availability_statuses_trigger_http_balance_fallback() {
+        let address = "1111222222222222222222222222222222222222";
+        let app = Router::new().route(
+            "/api/balance/{address}",
+            get(move || async move {
+                Json(serde_json::json!({
+                    "address": address, "balance": "7", "blockHash": "abcd", "blockNumber": 12
+                }))
+            }),
+        );
+        let (http_port, http) = serve(app).await;
+        for (status, fallback) in [
+            (tonic::Code::Unavailable, true),
+            (tonic::Code::DeadlineExceeded, true),
+            (tonic::Code::Unimplemented, true),
+            (tonic::Code::PermissionDenied, false),
+            (tonic::Code::InvalidArgument, false),
+        ] {
+            let grpc = Router::new().fallback(move || async move {
+                tonic::Status::new(status, "test status").into_http::<axum::body::Body>()
+            });
+            let (grpc_port, grpc) = serve(grpc).await;
+            let mut config = AppConfig::from_env().unwrap();
+            config.observer_host = "127.0.0.1".into();
+            config.observer_grpc_host = None;
+            config.observer_http_port = http_port;
+            config.observer_grpc_port = grpc_port;
+            let node = NodeCliService::new(config.clone(), AlertService::new(&config));
+            let result = node.get_balance(address).await;
+            if fallback {
+                assert_eq!(result.unwrap(), "7");
+            } else {
+                assert!(
+                    matches!(result.unwrap_err().downcast_ref::<node_cli::Error>(),
+                    Some(node_cli::Error::Grpc { status: response, .. }) if response.code() == status)
+                );
+            }
+            grpc.abort();
+        }
+        http.abort();
     }
 
     #[tokio::test]
