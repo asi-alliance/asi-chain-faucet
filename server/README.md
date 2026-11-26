@@ -120,8 +120,8 @@ src/
 **Read-Only Observer Node** (read operations):
 - Balance queries and status checks
 - Default HTTP port: 40453
-- Configured via OBSERVER_HOST, OBSERVER_GRPC_PORT, OBSERVER_HTTP_PORT
-- Initial balances via gRPC exploratory queries; finalized balance reconciliation via HTTP `/api/balance/{address}`
+- Configure `OBSERVER_HOST`, `OBSERVER_GRPC_PORT` and `OBSERVER_HTTP_PORT`. Set `OBSERVER_GRPC_HOST` when the HTTP host is a load balancer and gRPC uses a direct observer.
+- Initial balance reads use gRPC, with one finalized HTTP balance read on transport or service unavailability. Claim reconciliation verifies the inclusion block and finalized height over HTTP.
 - Deploy status via `GET /api/deploy-finalization-status/{id}` (HTTP)
 
 ---
