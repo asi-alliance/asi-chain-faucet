@@ -308,10 +308,16 @@ See [server/Cargo.toml](server/Cargo.toml) and [web/package.json](web/package.js
 The **Faucet tests** workflow runs for pull requests targeting `dev` or `main`,
 pushes to either branch, and manual runs. It checks backend formatting and runs
 `cargo test --locked --all-targets` with the toolchain in
-`server/rust-toolchain.toml` and the committed Cargo git dependency. A separate job
-uses Node.js 24 to run the frontend amount tests, TypeScript/Vite build and lint.
+`server/rust-toolchain.toml` and the committed Cargo git dependency.
+**Faucet frontend tests** runs the amount tests, TypeScript/Vite build and lint
+with Node.js 24. On the same branches it runs when files in `web/`, its own
+workflow or a frontend deployment workflow change. Both test workflows also
+support manual runs.
 Test logs are retained as workflow artifacts for seven days, including failed
 test runs. Superseded runs for the same PR are cancelled.
+
+Frontend and backend deployments run manually. In GitHub Actions, select
+the deployment workflow for the component and environment, then choose **Run workflow**.
 
 To run the same checks locally after installing the prerequisites:
 
