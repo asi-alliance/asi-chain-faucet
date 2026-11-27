@@ -182,6 +182,21 @@ async fn read_node_status(host: &str, http_port: u16) -> Result<NodeStatus> {
     response.json().await.context("Invalid node status")
 }
 
+fn transfer_deploy_options(configured_limit: i64, status: NodeStatus) -> Result<DeployOptions> {
+    let phlo_limit = match status.max_phlo_limit {
+        Some(cap) => {
+            anyhow::ensure!(cap > 0, "Validator reported a nonpositive maxPhloLimit");
+            configured_limit.min(cap)
+        }
+        None => configured_limit,
+    };
+    Ok(DeployOptions {
+        phlo_limit: u64::try_from(phlo_limit)?,
+        phlo_price: status.min_phlo_price,
+        ..DeployOptions::default()
+    })
+}
+
 /// Deploy status enriched with the node's `/api/deploy/{id}` detail so callers
 /// can surface a `systemDeployError` (e.g. insufficient funds) that the
 /// finalization endpoint alone does not report.
@@ -294,9 +309,7 @@ impl NodeCliService {
             compatibility.shard_id == node_cli::deploy::DEFAULT_SHARD_ID,
             "Validator shard does not match the signed deploy shard"
         );
-        let mut options =
-            DeployOptions::default().with_phlo_limit(u64::try_from(self.config.deploy_phlo_limit)?);
-        options.phlo_price = status.min_phlo_price;
+        let options = transfer_deploy_options(self.config.deploy_phlo_limit, status)?;
         let signed = api
             .api()
             .prepare(&rholang, &options)
@@ -728,6 +741,37 @@ mod claim_tests {
             "minPhloPrice": "1", "nativeTokenDecimals": 18,
             "isReady": true, "isValidator": true, "isReadOnly": false
         })
+    }
+
+    #[test]
+    fn new_transfers_use_the_validator_price_and_the_lower_limit() {
+        let price = "340282366920938463463374607431768211457";
+        for (advertised_cap, expected_limit) in [
+            (Some(200_000), 200_000),
+            (Some(900_000), 500_000),
+            (None, 500_000),
+        ] {
+            let mut status = validator_status();
+            status["minPhloPrice"] = serde_json::json!(price);
+            if let Some(cap) = advertised_cap {
+                status["maxPhloLimit"] = serde_json::json!(cap);
+            }
+            let options =
+                transfer_deploy_options(500_000, serde_json::from_value(status).unwrap()).unwrap();
+            assert_eq!(options.phlo_limit, expected_limit);
+            assert_eq!(options.phlo_price.to_string(), price);
+        }
+    }
+
+    #[test]
+    fn a_nonpositive_advertised_limit_prevents_preparation() {
+        for cap in [0, -1] {
+            let mut status = validator_status();
+            status["maxPhloLimit"] = serde_json::json!(cap);
+            let error = transfer_deploy_options(500_000, serde_json::from_value(status).unwrap())
+                .unwrap_err();
+            assert!(error.to_string().contains("nonpositive maxPhloLimit"));
+        }
     }
 
     fn prepared_transfer(endpoint: String) -> PreparedTransfer {

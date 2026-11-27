@@ -10,7 +10,10 @@ Complete configuration guide for ASI Chain Faucet backend server.
 
 `FAUCET_TOKEN_DECIMALS` is an integer in 0..18, default 18. The selected node
 must report the same precision before the faucet signs a transfer. Its own
-HTTP status supplies the minimum phlo price used for that submission.
+HTTP status supplies the minimum phlo price used for that submission. For a
+new signed transfer, the faucet uses the lower of `DEPLOY_PHLO_LIMIT` and
+the validator's advertised `maxPhloLimit`. It uses the configured limit if
+the status provides no cap and rejects a nonpositive advertised cap.
 `FAUCET_AMOUNT` and `FAUCET_MAX_BALANCE` both use ASI token decimal strings:
 `10000` means 10,000 ASI, regardless of configured precision. Fractional ASI
 values are accepted only when exactly representable at that precision. Both
@@ -806,7 +809,8 @@ when rotating validators. `FAUCET_NETWORK_ID` is a local journal namespace,
 not a substitute for the node's network ID.
 
 Failover within a submission sends identical signed bytes to each validator.
-Each validator applies its admission rules, including its minimum Phlo price. A submission
+Each validator applies its admission rules, including its minimum Phlo price
+and maximum Phlo limit. A submission
 error, including a gRPC error or node rejection, is not treated as a canonical
 terminal verdict. If no replacement accepts the deploy, the existing
 reservation remains intact. The API preserves typed admission and queue refusal
