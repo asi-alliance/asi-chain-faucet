@@ -1,9 +1,6 @@
-name: Prod Faucet Frontend Deployment
+name: Testnet Faucet Frontend Deployment
 
 on:
-  #push:
-    # branches:
-    #   - dev
   workflow_dispatch:
 
 permissions:
@@ -14,16 +11,23 @@ jobs:
   build:
     name: Build on AWS CodeBuild
     runs-on: ubuntu-latest
-    
     steps:
+      - name: Validate Testnet deployment branch
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" != 'refs/heads/testnet' ]]; then
+            echo "::error::Testnet frontend deployments require the testnet branch."
+            exit 1
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::533793137436:role/asi-chain-faucet-prod-codebuild-service-role 
-          aws-region: us-east-1 
+          role-to-assume: arn:aws:iam::533793137436:role/asi-chain-faucet-prod-codebuild-service-role
+          aws-region: us-east-1
 
       - name: Run AWS CodeBuild
         uses: aws-actions/aws-codebuild-run-build@v1

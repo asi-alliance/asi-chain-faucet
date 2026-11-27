@@ -294,6 +294,28 @@ See [server/Cargo.toml](server/Cargo.toml) and [web/package.json](web/package.js
 - Building
 - Troubleshooting common issues
 
+### Manual deployments
+
+In GitHub Actions, open the workflow for your target, choose **Run workflow**,
+and select the corresponding branch.
+
+| Frontend target | Branch | Workflow |
+| --- | --- | --- |
+| Testnet | `testnet` | [Testnet Faucet Frontend Deployment](.github/workflows/deploy-faucet-frontend-testnet.yml) |
+| Internal Dev | `dev` | [Dev Faucet Frontend Deployment](.github/workflows/deploy-faucet-frontend-dev.yml) |
+
+The frontend workflows reject other branches and tags before requesting AWS
+credentials. The frontend deployment target for `main` is currently undefined.
+Testnet uses the `asi-chain-faucet-prod-frontend` CodeBuild project in `us-east-1`.
+
+GitHub requires the manual workflow files on the default branch (`testnet`).
+Each run uses the workflow version on the selected branch, so the updated Dev
+workflow must also reach `dev` before its branch check takes effect there.
+[GitHub's manual workflow guide](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)
+
+For manual backend deployments, use
+[Deploy Faucet Backend Dev](.github/workflows/deploy-faucet-server-dev.yml).
+
 ### Additional Resources
 
 - **[ASI Alliance Documentation](https://docs.asichain.io)** - General ASI blockchain documentation
@@ -308,8 +330,11 @@ See [server/Cargo.toml](server/Cargo.toml) and [web/package.json](web/package.js
 The **Faucet tests** workflow runs for pull requests targeting `dev` or `main`,
 pushes to either branch, and manual runs. It checks backend formatting and runs
 `cargo test --locked --all-targets` with the toolchain in
-`server/rust-toolchain.toml` and the committed Cargo git dependency. A separate job
-uses Node.js 24 to run the frontend amount tests, TypeScript/Vite build and lint.
+`server/rust-toolchain.toml` and the committed Cargo git dependency.
+**Faucet frontend tests** runs the amount tests, TypeScript/Vite build and lint
+with Node.js 24. On the same branches it runs when files in `web/`, its own
+workflow or a frontend deployment workflow change. Both test workflows also
+support manual runs.
 Test logs are retained as workflow artifacts for seven days, including failed
 test runs. Superseded runs for the same PR are cancelled.
 

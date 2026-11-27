@@ -1,9 +1,7 @@
 name: Dev Faucet Frontend Deployment
 
 on:
-  push:
-    branches:
-      - dev
+  workflow_dispatch:
 
 permissions:
   id-token: write
@@ -15,6 +13,14 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+      - name: Validate Internal Dev deployment branch
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" != 'refs/heads/dev' ]]; then
+            echo "::error::Internal Dev frontend deployments require the dev branch."
+            exit 1
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
