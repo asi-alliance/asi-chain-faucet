@@ -35,7 +35,7 @@ rand = "0.9.5"
 reqwest = { version = "0.12.28", features = ["json", "rustls-tls"], default-features = false }
 
 # The client decodes typed admission refusals and queue cause metadata.
-node_cli = { git = "https://github.com/asi-alliance/asi-chain-client.git", rev = "2fedf97e66a56b7a0b4cce06eb546d36c221b58e", default-features = false }
+node_cli = { git = "https://github.com/F1R3FLY-io/rust-client.git", rev = "2ab2199bba78da19c0a095b6ba1e5c5f5cad0829", default-features = false }
 
 [dev-dependencies]
 proptest = "1.12.0"
